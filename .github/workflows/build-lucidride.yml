@@ -153,7 +153,7 @@ jobs:
             "name": "Lucid Ride",
             "bundleIdentifier": "com.fabi.lucidride",
             "developerName": "Fabi",
-            "localizedDescription": "Bike telemetry + biometric pipeline. RS 125 dev → RS 660 prod. WHOOP HR JOIN, placeholder telemetry until hardware lands.",
+            "localizedDescription": "Body-state-aware motorcycle ride telemetry. HR profile via Supabase JOIN, placeholder tiles for lean angle / GPS / segments / body-state correlation until telemetry hardware is wired.",
             "iconURL": "https://db.speed-running-life.com/storage/v1/object/public/ipa-builds/LucidRide-icon-512.png",
             "tintColor": "#8B5CF6",
             "screenshotURLs": [],

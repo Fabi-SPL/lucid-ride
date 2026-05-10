@@ -2,8 +2,44 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Lucid Ride</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
@@ -20,10 +56,10 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Lucid Ride records your motorcycle ride GPS track in the background, so a phone screen-off ride still captures the route.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Lucid Ride connects to your bike's OBD adapter (OBDLink MX+) and to RaceBox / GoPro telemetry over Bluetooth.</string>
+	<string>Lucid Ride connects to your bike's OBD adapter and BLE telemetry hardware.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Lucid Ride needs Bluetooth to connect to bike telemetry hardware.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Lucid Ride uses iPhone IMU as fallback lean-angle source when RaceBox isn't connected.</string>
+	<string>Lucid Ride uses iPhone IMU as a fallback lean-angle source when external telemetry isn't connected.</string>
 </dict>
 </plist>
