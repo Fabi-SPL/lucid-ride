@@ -1,22 +1,25 @@
 import SwiftUI
 import SceneKit
 
-/// Minimalist 3D sport-bike rendered with SceneKit primitives.
-/// Aesthetic target: matches the Lucid Ride logo — gloss-black silhouette
-/// with a single cyan accent on the headlight. Front-3/4 camera angle for
-/// premium product-render vibe.
+/// Minimalist 3D sport-bike rendered with SceneKit. Single dark body, single
+/// cyan accent on the headlight (matches the Lucid Ride logo aesthetic).
 ///
-/// Geometry deliberately simple: one dark material across the entire body,
-/// no chrome detailing, no exhaust/seat clutter. Lean rotation on Z axis.
-/// Idle Y-rotation makes it feel alive when stationary.
+/// Tries to load `bike.usdz` from the app bundle for higher-quality geometry.
+/// If the model isn't bundled, falls back to a procedural primitives bike.
+/// Either way, key parts are exposed under stable node names so Phase 2
+/// hit-testing works regardless of the model source.
 ///
-/// Each part is named (tank, tailFairing, frontWheel, rearWheel, frontFairing,
-/// headlight) so a future iteration can wire SceneKit hit-testing to make the
-/// bike itself a tappable spec-menu (Fabi's idea — phase 2).
+/// Phase 2: tap any named part → onPartTap fires with the BikePart, the
+/// hit node pulses, and the parent view shows a BikePartSheet.
 struct BikeSceneView: UIViewRepresentable {
     let leanDegrees: Double
     let pulseBPM: Double?
     let accentColor: Color
+    var onPartTap: ((BikePart) -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPartTap: onPartTap)
+    }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
@@ -26,11 +29,20 @@ struct BikeSceneView: UIViewRepresentable {
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
+
+        context.coordinator.scnView = view
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        view.addGestureRecognizer(tap)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
+        context.coordinator.onPartTap = onPartTap
         guard let bike = view.scene?.rootNode.childNode(withName: "bike", recursively: false) else { return }
+
         let radians = -leanDegrees * .pi / 180
         let lean = SCNAction.rotateTo(
             x: 0, y: 0, z: CGFloat(radians), duration: 0.18, usesShortestUnitArc: true
@@ -38,12 +50,62 @@ struct BikeSceneView: UIViewRepresentable {
         lean.timingMode = .easeOut
         bike.runAction(lean, forKey: "lean")
 
-        // Live accent color — drives the headlight emission so HR zone tints the bike
         let uiAccent = UIColor(accentColor)
-        if let head = view.scene?.rootNode.childNode(withName: "headlight", recursively: true),
+        if let head = view.scene?.rootNode.childNode(withName: BikePart.headlight.nodeName, recursively: true),
            let mat = head.geometry?.firstMaterial {
             mat.diffuse.contents = uiAccent
             mat.emission.contents = uiAccent.withAlphaComponent(0.85)
+        }
+    }
+
+    // MARK: - Coordinator (gesture)
+
+    final class Coordinator: NSObject {
+        var onPartTap: ((BikePart) -> Void)?
+        weak var scnView: SCNView?
+
+        init(onPartTap: ((BikePart) -> Void)?) {
+            self.onPartTap = onPartTap
+        }
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = scnView else { return }
+            let location = gesture.location(in: view)
+            let hits = view.hitTest(location, options: [
+                SCNHitTestOption.boundingBoxOnly: false,
+                SCNHitTestOption.searchMode: SCNHitTestSearchMode.closest.rawValue
+            ])
+            for hit in hits {
+                if let part = matchPart(node: hit.node) {
+                    pulse(node: hit.node)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onPartTap?(part)
+                    return
+                }
+            }
+        }
+
+        /// Walks up the scene graph from the hit node looking for a node named
+        /// after a BikePart (USDZ models often have nested geometry — this
+        /// handles both flat-named nodes and nested hierarchies).
+        private func matchPart(node: SCNNode) -> BikePart? {
+            var current: SCNNode? = node
+            while let n = current {
+                if let name = n.name,
+                   let part = BikePart.allCases.first(where: { $0.nodeName == name }) {
+                    return part
+                }
+                current = n.parent
+            }
+            return nil
+        }
+
+        private func pulse(node: SCNNode) {
+            let up   = SCNAction.scale(by: 1.15, duration: 0.12)
+            let down = SCNAction.scale(by: 1.0/1.15, duration: 0.18)
+            up.timingMode = .easeOut
+            down.timingMode = .easeOut
+            node.runAction(SCNAction.sequence([up, down]))
         }
     }
 
@@ -53,9 +115,6 @@ struct BikeSceneView: UIViewRepresentable {
         let scene = SCNScene()
         scene.background.contents = UIColor.clear
 
-        // Camera — front-3/4 view, slightly elevated, looking back at origin.
-        // Positioned so the fairing is visible head-on with depth on the right
-        // side (where the rear of the bike fades into shadow).
         let cam = SCNCamera()
         cam.fieldOfView = 32
         cam.zNear = 0.1
@@ -64,15 +123,14 @@ struct BikeSceneView: UIViewRepresentable {
         let camNode = SCNNode()
         camNode.camera = cam
         camNode.position = SCNVector3(-4.6, 1.8, 4.6)
-        camNode.eulerAngles = SCNVector3(-0.18, -0.78, 0)   // ~-45° yaw, slight downward pitch
+        camNode.eulerAngles = SCNVector3(-0.18, -0.78, 0)
         scene.rootNode.addChildNode(camNode)
 
-        // Lighting — three-point, dramatic.
-        // Key from upper-front-right: defines the silhouette
+        // Three-point lighting for cinematic depth
         let key = SCNLight()
         key.type = .directional
         key.intensity = 1100
-        key.color = UIColor(white: 1, alpha: 1)
+        key.color = UIColor.white
         key.castsShadow = true
         key.shadowMode = .deferred
         key.shadowRadius = 6
@@ -82,7 +140,6 @@ struct BikeSceneView: UIViewRepresentable {
         keyNode.eulerAngles = SCNVector3(-0.7, 0.5, 0)
         scene.rootNode.addChildNode(keyNode)
 
-        // Ambient — low, slightly violet so dark surfaces aren't black holes
         let amb = SCNLight()
         amb.type = .ambient
         amb.intensity = 220
@@ -91,8 +148,6 @@ struct BikeSceneView: UIViewRepresentable {
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Rim from behind-left: cyan accent that wraps the silhouette,
-        // matching the headlight color so the brand reads through
         let rim = SCNLight()
         rim.type = .directional
         rim.intensity = 800
@@ -102,78 +157,89 @@ struct BikeSceneView: UIViewRepresentable {
         rimNode.eulerAngles = SCNVector3(-0.4, -2.7, 0)
         scene.rootNode.addChildNode(rimNode)
 
-        scene.rootNode.addChildNode(bikeNode())
+        scene.rootNode.addChildNode(loadOrBuildBike())
         return scene
     }
 
-    private func bikeNode() -> SCNNode {
+    /// Try `bike.usdz` from the bundle first; fall back to procedural primitives
+    /// if the file isn't present. This lets us swap in a downloaded high-quality
+    /// model later without changing any other code.
+    private func loadOrBuildBike() -> SCNNode {
+        if let url = Bundle.main.url(forResource: "bike", withExtension: "usdz"),
+           let scene = try? SCNScene(url: url, options: nil) {
+            let bike = SCNNode()
+            bike.name = "bike"
+            scene.rootNode.childNodes.forEach { bike.addChildNode($0) }
+            // Wrap inside yWrapper for idle rotation without fighting lean
+            let yWrapper = SCNNode()
+            yWrapper.name = "yWrapper"
+            bike.childNodes.forEach { yWrapper.addChildNode($0) }
+            bike.childNodes.forEach { $0.removeFromParentNode() }
+            bike.addChildNode(yWrapper)
+            yWrapper.runAction(idleSpin())
+            return bike
+        }
+        return primitiveBike()
+    }
+
+    /// Fallback procedural sport-bike from primitives. Each body part has a
+    /// stable name matching BikePart.nodeName so hit-testing works.
+    private func primitiveBike() -> SCNNode {
         let bike = SCNNode()
         bike.name = "bike"
 
-        // Single body material — gloss near-black with subtle violet tint.
-        // Slight metalness lets the rim light wrap the silhouette.
         let body = uiMaterial(
             color: UIColor(red: 0.07, green: 0.06, blue: 0.10, alpha: 1),
             metal: 0.85, rough: 0.28
         )
-        // Cyan accent for the headlight — strong emission for the singular focal point
         let accent = uiMaterial(
             color: UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 1),
             metal: 0.4, rough: 0.05, emission: 0.85
         )
 
-        // --- Front fairing (the headlamp shroud) ---
-        // Tall stretched box with high chamfer = aggressive sport-bike fairing
         let fairing = SCNBox(width: 1.10, height: 1.20, length: 0.95, chamferRadius: 0.45)
         fairing.firstMaterial = body
         let fairingN = SCNNode(geometry: fairing)
-        fairingN.name = "frontFairing"
+        fairingN.name = BikePart.frontFairing.nodeName
         fairingN.position = SCNVector3(-1.20, 0.45, 0)
         fairingN.eulerAngles = SCNVector3(0, 0, -0.16)
         bike.addChildNode(fairingN)
 
-        // --- Tank ---
-        // Wide chamfered box — the 'shoulders' of the bike
         let tank = SCNBox(width: 1.05, height: 0.55, length: 0.85, chamferRadius: 0.28)
         tank.firstMaterial = body
         let tankN = SCNNode(geometry: tank)
-        tankN.name = "tank"
+        tankN.name = BikePart.tank.nodeName
         tankN.position = SCNVector3(-0.10, 0.62, 0)
         bike.addChildNode(tankN)
 
-        // --- Tail / seat fairing ---
-        // Tapered slim rear — completes the silhouette
         let tail = SCNBox(width: 0.95, height: 0.22, length: 0.55, chamferRadius: 0.14)
         tail.firstMaterial = body
         let tailN = SCNNode(geometry: tail)
-        tailN.name = "tailFairing"
+        tailN.name = BikePart.tailFairing.nodeName
         tailN.position = SCNVector3(0.95, 0.55, 0)
         bike.addChildNode(tailN)
 
-        // --- Wheels ---
-        // Smooth tori, single body material — minimal but readable
-        for (name, x) in [("frontWheel", -1.65), ("rearWheel", 1.65)] {
+        for (part, x) in [(BikePart.frontWheel, -1.65), (BikePart.rearWheel, 1.65)] {
             let tire = SCNTorus(ringRadius: 0.62, pipeRadius: 0.18)
             tire.firstMaterial = body
             tire.ringSegmentCount = 48
             tire.pipeSegmentCount = 24
             let n = SCNNode(geometry: tire)
-            n.name = name
+            n.name = part.nodeName
             n.position = SCNVector3(x, -0.20, 0)
             n.eulerAngles = SCNVector3(0, 0, .pi / 2)
             bike.addChildNode(n)
         }
 
-        // --- Headlight (the cyan accent — match the logo's lit eye) ---
         let headlight = SCNCylinder(radius: 0.20, height: 0.10)
         headlight.firstMaterial = accent
         let headN = SCNNode(geometry: headlight)
-        headN.name = "headlight"
+        headN.name = BikePart.headlight.nodeName
         headN.position = SCNVector3(-1.66, 0.62, 0)
         headN.eulerAngles = SCNVector3(0, 0, .pi / 2)
         bike.addChildNode(headN)
 
-        // Subtle halo / glow disk behind the headlight for premium "lit" feel
+        // Halo behind headlight — additive blend for the lit-eye look
         let halo = SCNPlane(width: 0.55, height: 0.55)
         let haloMat = SCNMaterial()
         haloMat.diffuse.contents = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 0.25)
@@ -188,23 +254,25 @@ struct BikeSceneView: UIViewRepresentable {
         haloN.eulerAngles = SCNVector3(0, .pi / 2, 0)
         bike.addChildNode(haloN)
 
-        // Idle Y rotation so the bike feels alive at rest. Wrapper child node
-        // so lean (Z) and idle (Y) don't fight on the same transform.
+        // Idle Y rotation so the bike feels alive at rest
         let yWrapper = SCNNode()
         yWrapper.name = "yWrapper"
         bike.childNodes.forEach { yWrapper.addChildNode($0) }
         bike.childNodes.forEach { $0.removeFromParentNode() }
         bike.addChildNode(yWrapper)
-        let idle = SCNAction.repeatForever(
+        yWrapper.runAction(idleSpin())
+
+        return bike
+    }
+
+    private func idleSpin() -> SCNAction {
+        SCNAction.repeatForever(
             SCNAction.sequence([
                 SCNAction.rotateBy(x: 0, y: 0.10, z: 0, duration: 6),
                 SCNAction.rotateBy(x: 0, y: -0.20, z: 0, duration: 12),
                 SCNAction.rotateBy(x: 0, y: 0.10, z: 0, duration: 6)
             ])
         )
-        yWrapper.runAction(idle)
-
-        return bike
     }
 
     private func uiMaterial(color: UIColor, metal: CGFloat, rough: CGFloat, emission: CGFloat = 0) -> SCNMaterial {

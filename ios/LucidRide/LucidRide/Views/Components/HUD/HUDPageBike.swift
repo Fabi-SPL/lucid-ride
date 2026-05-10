@@ -1,78 +1,61 @@
 import SwiftUI
 
-/// HUD Page 4 — Bike. 3D motorcycle that leans with the lean angle.
-/// SceneKit-rendered, brand-colored, runs at 60fps.
+/// HUD Page 4 — Bike. The 3D bike IS the menu: tap any part to drill into
+/// its data. Headlight = body state (real). Wheels / tank / fairings =
+/// telemetry placeholders rendered with full data slots ready for Phase B.
 struct HUDPageBike: View {
     @ObservedObject var state: HUDState
+    @State private var selectedPart: BikePart?
+    @State private var hintVisible = true
 
     var body: some View {
         ZStack {
             BikeSceneView(
                 leanDegrees: state.placeholderLean,
                 pulseBPM: state.liveHR,
-                accentColor: HUDState.zoneColor(for: state.liveHR)
+                accentColor: HUDState.zoneColor(for: state.liveHR),
+                onPartTap: { part in
+                    hintVisible = false
+                    selectedPart = part
+                }
             )
-            .padding(.bottom, 40)
 
             VStack {
                 Spacer()
-                HStack(spacing: 14) {
-                    miniStat(label: "LEAN",
-                             value: "\(Int(state.placeholderLean))°",
-                             color: leanColor,
-                             pending: true)
-                    miniStat(label: "HR",
-                             value: state.liveHR.map { "\(Int($0))" } ?? "—",
-                             color: HUDState.zoneColor(for: state.liveHR),
-                             pending: false)
-                    miniStat(label: "SCORE",
-                             value: "\(state.rideScore)",
-                             color: scoreColor,
-                             pending: false)
+                if hintVisible {
+                    tapHint
+                        .padding(.bottom, 14)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 10)
             }
         }
+        .sheet(item: $selectedPart) { part in
+            BikePartSheet(part: part, state: state)
+        }
+        .task {
+            // Auto-fade the tap hint after 6 seconds
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            withAnimation(DS.Anim.standard) { hintVisible = false }
+        }
     }
 
-    @ViewBuilder
-    private func miniStat(label: String, value: String, color: Color, pending: Bool) -> some View {
-        VStack(spacing: 2) {
-            Text(label)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
-                .tracking(1.0)
-                .foregroundStyle(DS.Colors.textMuted)
-            Text(value)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(pending ? color.opacity(0.55) : color)
-                .monospacedDigit()
-                .contentTransition(.numericText())
+    private var tapHint: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "hand.tap.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(DS.Colors.violet)
+            Text("Tap any part of the bike for its data")
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .tracking(0.4)
+                .foregroundStyle(DS.Colors.textPrimary)
         }
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+            Capsule().fill(Color.white.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(color.opacity(0.25), lineWidth: 0.5)
+            Capsule().stroke(DS.Colors.violet.opacity(0.30), lineWidth: 0.5)
         )
-    }
-
-    private var leanColor: Color {
-        let abs = Swift.abs(state.placeholderLean)
-        if abs < 25 { return DS.Colors.teal }
-        if abs < 40 { return DS.Colors.success }
-        if abs < 50 { return DS.Colors.warning }
-        return DS.Colors.danger
-    }
-
-    private var scoreColor: Color {
-        if state.rideScore >= 80 { return DS.Colors.success }
-        if state.rideScore >= 60 { return DS.Colors.teal }
-        if state.rideScore >= 40 { return DS.Colors.warning }
-        return DS.Colors.danger
     }
 }
