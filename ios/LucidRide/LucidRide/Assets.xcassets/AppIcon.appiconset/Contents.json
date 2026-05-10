@@ -2,7 +2,8 @@
   "images" : [
     {
       "filename" : "icon.png",
-      "idiom" : "iphone",
+      "idiom" : "universal",
+      "platform" : "ios",
       "size" : "1024x1024"
     }
   ],
