@@ -38,3 +38,4 @@ targets:
         CODE_SIGN_ENTITLEMENTS: LucidRide/LucidRide.entitlements
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
+        TARGETED_DEVICE_FAMILY: "1"

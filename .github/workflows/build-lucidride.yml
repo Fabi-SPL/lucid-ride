@@ -211,6 +211,6 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
             -H "Content-Type: image/png" \
             -H "x-upsert: true" \
-            --data-binary @ios/LucidRide/LucidRide/Assets.xcassets/AppIcon.appiconset/icon-512.png
+            --data-binary @ios/LucidRide/build-assets/icon-512.png
 
           echo "Storage upload complete."
