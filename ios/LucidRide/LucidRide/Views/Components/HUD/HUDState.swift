@@ -18,9 +18,14 @@ final class HUDState: ObservableObject {
 
     @Published var placeholderLean: Double = 0           // Phase B → real IMU
     @Published var particleTrigger: Int = 0              // bumps on zone change
+    @Published var lastSampleAge: TimeInterval = .infinity  // seconds since latest realtime_health row
 
     private(set) var lastZone: Int = -1
     private(set) var rideStartedAt: Date?
+
+    /// True when no fresh HR sample has arrived in the last 60 seconds.
+    /// Pages can render a "Open LucidBridge for live data" hint when stale.
+    var hrIsStale: Bool { lastSampleAge > 60 }
 
     private var hrTimer: Timer?
     private var elapsedTimer: Timer?
@@ -92,6 +97,7 @@ final class HUDState: ObservableObject {
             }
             let cutoff = Date().addingTimeInterval(-90)
             self.hrBuffer.removeAll { $0.recordedAt < cutoff }
+            self.lastSampleAge = Date().timeIntervalSince(s.recordedAt)
             let zone = Self.zoneIndex(for: hr)
             if zone != self.lastZone, self.lastZone != -1 {
                 self.particleTrigger += 1

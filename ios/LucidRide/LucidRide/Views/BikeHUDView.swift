@@ -37,10 +37,16 @@ struct BikeHUDView: View {
                     HUDPageBody(state: state).tag(0)
                     HUDPageRide(state: state).tag(1)
                     HUDPageCluster(state: state).tag(2)
+                    HUDPageBike(state: state).tag(3)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
                 .indexViewStyle(.page(backgroundDisplayMode: .always))
                 .frame(maxHeight: .infinity)
+
+                if state.hrIsStale {
+                    staleBanner
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -120,8 +126,36 @@ struct BikeHUDView: View {
         case 0: return "Body"
         case 1: return "Ride"
         case 2: return "Cluster"
+        case 3: return "Bike"
         default: return ""
         }
+    }
+
+    /// Bottom-edge banner shown when no fresh HR samples have arrived in
+    /// the last 60s — usually means LucidBridge isn't running. Tap to dismiss.
+    private var staleBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(DS.Colors.amber)
+            Text("HR stale — open LucidBridge to start streaming")
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .tracking(0.4)
+                .foregroundStyle(DS.Colors.textPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DS.Colors.amber.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(DS.Colors.amber.opacity(0.35), lineWidth: 0.5)
+        )
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
     }
 
     // MARK: - Lifecycle
