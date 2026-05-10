@@ -362,15 +362,10 @@ struct BikeHUDView: View {
         let end = Date()
         let start = end.addingTimeInterval(-120)
         if let samples = try? await supabase.fetchHRWindow(start: start, end: end) {
-            await MainActor.run {
-                hrBuffer = samples
-                if let hrv = try? await supabase.fetchLatestHRV() {
-                    self.hrvAtStart = hrv
-                }
-            }
+            await MainActor.run { hrBuffer = samples }
         }
-        // HRV (separate await to avoid nested try? in task)
-        if hrvAtStart == nil, let hrv = try? await supabase.fetchLatestHRV() {
+        // HRV — separate await so we don't nest async calls inside MainActor.run
+        if let hrv = try? await supabase.fetchLatestHRV() {
             await MainActor.run { self.hrvAtStart = hrv }
         }
     }
