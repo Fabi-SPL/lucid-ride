@@ -227,7 +227,7 @@ struct BikeSceneView: UIViewRepresentable {
             let n = SCNNode(geometry: tire)
             n.name = part.nodeName
             n.position = SCNVector3(x, -0.20, 0)
-            n.eulerAngles = SCNVector3(0, 0, .pi / 2)
+            n.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
             bike.addChildNode(n)
         }
 
@@ -236,7 +236,7 @@ struct BikeSceneView: UIViewRepresentable {
         let headN = SCNNode(geometry: headlight)
         headN.name = BikePart.headlight.nodeName
         headN.position = SCNVector3(-1.66, 0.62, 0)
-        headN.eulerAngles = SCNVector3(0, 0, .pi / 2)
+        headN.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
         bike.addChildNode(headN)
 
         // Halo behind headlight — additive blend for the lit-eye look
@@ -251,7 +251,7 @@ struct BikeSceneView: UIViewRepresentable {
         halo.firstMaterial = haloMat
         let haloN = SCNNode(geometry: halo)
         haloN.position = SCNVector3(-1.55, 0.62, 0)
-        haloN.eulerAngles = SCNVector3(0, .pi / 2, 0)
+        haloN.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
         bike.addChildNode(haloN)
 
         // Idle Y rotation so the bike feels alive at rest
