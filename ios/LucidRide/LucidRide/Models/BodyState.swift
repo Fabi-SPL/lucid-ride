@@ -2,19 +2,19 @@ import Foundation
 import SwiftUI
 
 /// Single HR/HRV sample from the `realtime_health` table.
-/// Used for the HR profile chart on RideDetailView.
+/// Columns: `recorded_at` (timestamptz), `heart_rate` (int), `hrv_rmssd` (float8).
 struct HRSample: Codable, Identifiable {
-    let ts: Date
-    let hr: Double?
+    let recordedAt: Date
+    let heartRate: Double?
     let hrvRmssd: Double?
 
     enum CodingKeys: String, CodingKey {
-        case ts
-        case hr
-        case hrvRmssd = "hrv_rmssd"
+        case recordedAt = "recorded_at"
+        case heartRate  = "heart_rate"
+        case hrvRmssd   = "hrv_rmssd"
     }
 
-    var id: TimeInterval { ts.timeIntervalSince1970 }
+    var id: TimeInterval { recordedAt.timeIntervalSince1970 }
 }
 
 /// Snapshot of "should I be on a bike right now?" derived from latest HRV.

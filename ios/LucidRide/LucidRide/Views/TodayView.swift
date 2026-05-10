@@ -8,6 +8,7 @@ struct TodayView: View {
     @State private var recentRides: [Ride] = []
     @State private var isLoading = false
     @State private var lastError: String?
+    @State private var showHUD = false
 
     private let supabase = SupabaseClient.shared
 
@@ -31,6 +32,20 @@ struct TodayView: View {
                     mode: activeRide == nil ? .idle : .active,
                     action: handleRideButton
                 )
+
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showHUD = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("Bike Mode HUD")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    }
+                }
+                .buttonStyle(GlassActionButtonStyle(tint: DS.Colors.teal))
+                .frame(maxWidth: .infinity)
 
                 if let active = activeRide {
                     activeRideCard(active)
@@ -65,6 +80,14 @@ struct TodayView: View {
         .refreshable { await refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .lucidRideAuthChanged)) { _ in
             Task { await refresh() }
+        }
+        .fullScreenCover(isPresented: $showHUD) {
+            BikeHUDView(activeRide: activeRide) {
+                if let active = activeRide {
+                    try? await supabase.endRide(activityId: active.id)
+                    await refresh()
+                }
+            }
         }
     }
 

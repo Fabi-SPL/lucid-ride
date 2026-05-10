@@ -9,15 +9,15 @@ struct HRChart: View {
     let rideEnd: Date?
 
     private var hrSamples: [HRSample] {
-        samples.filter { $0.hr != nil && $0.hr! > 30 }
+        samples.filter { $0.heartRate != nil && $0.heartRate! > 30 }
     }
 
     private var hrPeak: Int? {
-        hrSamples.compactMap { $0.hr.map(Int.init) }.max()
+        hrSamples.compactMap { $0.heartRate.map(Int.init) }.max()
     }
 
     private var hrAvg: Int? {
-        let vals = hrSamples.compactMap { $0.hr }
+        let vals = hrSamples.compactMap { $0.heartRate }
         guard !vals.isEmpty else { return nil }
         return Int(vals.reduce(0, +) / Double(vals.count))
     }
@@ -43,9 +43,9 @@ struct HRChart: View {
                 )
             } else {
                 Chart(hrSamples) { sample in
-                    if let hr = sample.hr {
+                    if let hr = sample.heartRate {
                         AreaMark(
-                            x: .value("time", sample.ts),
+                            x: .value("time", sample.recordedAt),
                             yStart: .value("baseline", 50),
                             yEnd: .value("hr", hr)
                         )
@@ -56,7 +56,7 @@ struct HRChart: View {
                         .interpolationMethod(.catmullRom)
 
                         LineMark(
-                            x: .value("time", sample.ts),
+                            x: .value("time", sample.recordedAt),
                             y: .value("hr", hr)
                         )
                         .foregroundStyle(DS.Colors.danger)

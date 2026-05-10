@@ -24,7 +24,7 @@ This is the SwiftUI iOS app that ships through AltStore PAL. The pipeline mirror
 
 4. **Add the source to AltStore on the iPhone:**
    - Open AltStore PAL app on iPhone
-   - Add Source → `https://db.speed-running-life.com/storage/v1/object/public/ipa-builds/altstore-source.json`
+   - Add Source → `[private — see project owner]`
    - "Lucid Ride" appears alongside Lucid Health / Bridge / Foods. Tap install.
 
 That's it. From now on every push to `ios/LucidRide/**` rebuilds, uploads, and bumps the version in the AltStore source.

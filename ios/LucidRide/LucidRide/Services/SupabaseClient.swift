@@ -209,16 +209,18 @@ final class SupabaseClient {
 
     /// Fetch HR samples from the realtime_health table within a time window.
     /// Used to render the post-ride HR profile chart on RideDetailView.
+    /// Columns: `recorded_at` (timestamp), `heart_rate` (int), `hrv_rmssd` (float).
     func fetchHRWindow(start: Date, end: Date) async throws -> [HRSample] {
         let startISO = ISO8601DateFormatter.lucid.string(from: start)
         let endISO   = ISO8601DateFormatter.lucid.string(from: end)
         let queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "select",    value: "ts,hr,hrv_rmssd"),
-            URLQueryItem(name: "user_id",   value: "eq.\(userId)"),
-            URLQueryItem(name: "ts",        value: "gte.\(startISO)"),
-            URLQueryItem(name: "ts",        value: "lte.\(endISO)"),
-            URLQueryItem(name: "order",     value: "ts.asc"),
-            URLQueryItem(name: "limit",     value: "10000")
+            URLQueryItem(name: "select",       value: "recorded_at,heart_rate,hrv_rmssd"),
+            URLQueryItem(name: "user_id",      value: "eq.\(userId)"),
+            URLQueryItem(name: "recorded_at",  value: "gte.\(startISO)"),
+            URLQueryItem(name: "recorded_at",  value: "lte.\(endISO)"),
+            URLQueryItem(name: "heart_rate",   value: "not.is.null"),
+            URLQueryItem(name: "order",        value: "recorded_at.asc"),
+            URLQueryItem(name: "limit",        value: "10000")
         ]
         guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return []
@@ -232,11 +234,11 @@ final class SupabaseClient {
     /// Latest HRV reading from realtime_health — drives the body-state band on TodayView.
     func fetchLatestHRV() async throws -> Double? {
         let queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "select",  value: "hrv_rmssd"),
-            URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+            URLQueryItem(name: "select",    value: "hrv_rmssd"),
+            URLQueryItem(name: "user_id",   value: "eq.\(userId)"),
             URLQueryItem(name: "hrv_rmssd", value: "not.is.null"),
-            URLQueryItem(name: "order",   value: "ts.desc"),
-            URLQueryItem(name: "limit",   value: "1")
+            URLQueryItem(name: "order",     value: "recorded_at.desc"),
+            URLQueryItem(name: "limit",     value: "1")
         ]
         guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return nil
@@ -244,6 +246,25 @@ final class SupabaseClient {
         let (data, _) = try await session.data(for: req)
         let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         return (arr?.first?["hrv_rmssd"] as? Double)
+    }
+
+    /// Latest HR reading from realtime_health — used by the live Bike Mode HUD,
+    /// polled every few seconds while the HUD is on screen.
+    func fetchLatestHR() async throws -> HRSample? {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select",     value: "recorded_at,heart_rate,hrv_rmssd"),
+            URLQueryItem(name: "user_id",    value: "eq.\(userId)"),
+            URLQueryItem(name: "heart_rate", value: "not.is.null"),
+            URLQueryItem(name: "order",      value: "recorded_at.desc"),
+            URLQueryItem(name: "limit",      value: "1")
+        ]
+        guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
+            return nil
+        }
+        let (data, _) = try await session.data(for: req)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601withFractional
+        return (try? decoder.decode([HRSample].self, from: data))?.first
     }
 }
 
