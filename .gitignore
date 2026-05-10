@@ -1,0 +1,29 @@
+# macOS / Xcode noise
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Xcode-generated project (XcodeGen produces it from project.yml)
+ios/LucidRide/LucidRide.xcodeproj/
+
+# Build outputs
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+
+# Node / tooling caches
+node_modules/
+.cache/
+
+# Original 1164×1164 source logo (resized 1024 + 512 PNGs live in AppIcon set)
+Ride Logo.png
+
+# Local backups
+*.bak
+
+# Personal docs — stays local, never pushed.
+# Anything in here can mention real names, dates, purchase plans, hardware
+# specifics, or other context that doesn't belong in a public repo.
+# Includes: project CLAUDE.md, HANDOFF.md, research/, future PLANS.md.
+.private/

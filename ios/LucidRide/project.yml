@@ -1,0 +1,40 @@
+name: LucidRide
+options:
+  bundleIdPrefix: com.fabi
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  defaultConfig: Release
+  groupSortPosition: top
+
+settings:
+  base:
+    DEVELOPMENT_LANGUAGE: en
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SUPPORTS_MACCATALYST: NO
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+
+targets:
+  LucidRide:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: LucidRide
+        excludes:
+          - "**/*.entitlements"
+          - "**/Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabi.lucidride
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: LucidRide/Info.plist
+        CODE_SIGN_ENTITLEMENTS: LucidRide/LucidRide.entitlements
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
