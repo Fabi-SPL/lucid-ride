@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var endingRide = false
     @State private var startingRide = false
     @State private var voiceTimer: Timer?
+    @State private var partPositions: [BikePart: CGPoint] = [:]
 
     private let supabase = SupabaseClient.shared
 
@@ -32,9 +33,19 @@ struct ContentView: View {
                 onPartTap: { part in
                     hintVisible = false
                     selectedPart = part
+                },
+                onPartScreenPositions: { positions in
+                    partPositions = positions
                 }
             )
             .ignoresSafeArea()
+
+            // Floating part markers — small glass pills with an icon + chevron
+            // anchored to each bike-part's projected screen position. They orbit
+            // with the bike (driven by SCN render-loop projection) so the user
+            // always sees what's tappable.
+            partMarkersLayer
+                .allowsHitTesting(false)
 
             ParticleBurst(
                 trigger: state.particleTrigger,
@@ -62,6 +73,35 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .lucidRideAuthChanged)) { _ in
             Task { await refreshActiveRide() }
         }
+    }
+
+    // MARK: - Part markers (floating arrows + icons)
+
+    @ViewBuilder
+    private var partMarkersLayer: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                ForEach(BikePart.allCases) { part in
+                    if let p = partPositions[part] {
+                        PartMarker(part: part, isLive: part.hasLiveData)
+                            .position(x: p.x, y: p.y - 28)   // hover 28pt above part centre
+                            .opacity(opacityForPosition(p, in: geo.size))
+                            .animation(.easeOut(duration: 0.15), value: p)
+                    }
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+    }
+
+    /// Fade markers near screen edges so they don't fight the UI chrome.
+    private func opacityForPosition(_ p: CGPoint, in size: CGSize) -> Double {
+        let edge: CGFloat = 60
+        let leftFade  = min(1, max(0, p.x / edge))
+        let rightFade = min(1, max(0, (size.width - p.x) / edge))
+        let topFade   = min(1, max(0, (p.y - 50) / edge))           // top bar is ~50pt tall
+        let botFade   = min(1, max(0, (size.height - 80 - p.y) / edge)) // bottom row is ~80pt
+        return min(min(leftFade, rightFade), min(topFade, botFade))
     }
 
     // MARK: - Top bar

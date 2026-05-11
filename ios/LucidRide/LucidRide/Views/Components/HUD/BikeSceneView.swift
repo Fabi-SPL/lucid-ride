@@ -17,8 +17,9 @@ import GLTFKit2
 ///    curved fairing and wheel arch.
 /// 3. HDR camera with measured bloom + vignette + DOF that won't fight the IBL.
 ///
-/// Background stays pure black so the bike pops against the HUD chrome. The
-/// HDR is used only as `lightingEnvironment`, not as `background.contents`.
+/// Background is TRANSPARENT — the SCNView blends onto the SwiftUI
+/// `AuroraBackground` underneath. Set `isOpaque = false` and clear all the
+/// background contents inside the scene.
 ///
 /// Pipeline:
 /// - Load bike.glb via GLTFKit2 (PBR materials come through automatically).
@@ -27,18 +28,26 @@ import GLTFKit2
 /// - Light: HDR IBL + a soft key fill + dim ambient. The HDR carries most of
 ///   the work — directional lights only add edge definition.
 /// - Camera: orbit rig revolves slowly around the bike's vertical centre.
+/// - Every render frame: project each named bike-part node's world position
+///   to 2-D screen space and surface it via `onPartScreenPositions` so the
+///   ContentView overlay can draw tappable icons / arrows that orbit with
+///   the bike.
 struct BikeSceneView: UIViewRepresentable {
     let leanDegrees: Double
     let pulseBPM: Double?
     let accentColor: Color   // Kept in the API; not currently used by the scene.
     var onPartTap: ((BikePart) -> Void)?
+    var onPartScreenPositions: (([BikePart: CGPoint]) -> Void)?
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPartTap: onPartTap) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPartTap: onPartTap, onPositions: onPartScreenPositions)
+    }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.scene = makeScene(coordinator: context.coordinator)
-        view.backgroundColor = .black
+        view.backgroundColor = .clear           // let AuroraBackground show through
+        view.isOpaque = false
         view.allowsCameraControl = false
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
@@ -46,6 +55,8 @@ struct BikeSceneView: UIViewRepresentable {
         view.autoenablesDefaultLighting = false
 
         context.coordinator.scnView = view
+        view.delegate = context.coordinator      // SCNSceneRendererDelegate for projection
+
         let tap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
@@ -56,6 +67,7 @@ struct BikeSceneView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.onPartTap = onPartTap
+        context.coordinator.onPositions = onPartScreenPositions
         guard let bike = view.scene?.rootNode.childNode(withName: "bike", recursively: false) else { return }
         let radians = -leanDegrees * .pi / 180
         let lean = SCNAction.rotateTo(
@@ -67,12 +79,19 @@ struct BikeSceneView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, SCNSceneRendererDelegate {
         var onPartTap: ((BikePart) -> Void)?
+        var onPositions: (([BikePart: CGPoint]) -> Void)?
         weak var scnView: SCNView?
 
-        init(onPartTap: ((BikePart) -> Void)?) {
+        // Throttle projection callback to ~30 Hz to keep SwiftUI re-renders cheap.
+        private var lastProjectionTime: TimeInterval = 0
+        private let projectionInterval: TimeInterval = 1.0 / 30.0
+
+        init(onPartTap: ((BikePart) -> Void)?,
+             onPositions: (([BikePart: CGPoint]) -> Void)?) {
             self.onPartTap = onPartTap
+            self.onPositions = onPositions
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -112,13 +131,50 @@ struct BikeSceneView: UIViewRepresentable {
             down.timingMode = .easeOut
             node.runAction(SCNAction.sequence([up, down]))
         }
+
+        // MARK: SCNSceneRendererDelegate
+
+        func renderer(_ renderer: SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
+            guard let view = scnView, let cb = onPositions else { return }
+            if time - lastProjectionTime < projectionInterval { return }
+            lastProjectionTime = time
+
+            // Walk every named bike-part SCNNode and project its world centre
+            // to screen space. Skip parts whose projected point lies behind the
+            // camera (Z >= 1) or off-screen.
+            var positions: [BikePart: CGPoint] = [:]
+            guard let bike = scene.rootNode.childNode(withName: "bike", recursively: false) else { return }
+
+            for part in BikePart.allCases {
+                guard let node = bike.childNode(withName: part.nodeName, recursively: true) else { continue }
+                let bb = node.boundingBox
+                let localCenter = SCNVector3((bb.min.x + bb.max.x) / 2,
+                                             (bb.min.y + bb.max.y) / 2,
+                                             (bb.min.z + bb.max.z) / 2)
+                let world = node.convertPosition(localCenter, to: nil)
+                let projected = view.projectPoint(world)
+                // projected.z: 0 = near plane, 1 = far plane. Skip behind-camera.
+                if projected.z < 0 || projected.z > 1 { continue }
+                // On iOS projectPoint returns view-coordinate POINTS — no need
+                // to divide by contentScaleFactor.
+                let pt = CGPoint(x: CGFloat(projected.x), y: CGFloat(projected.y))
+                positions[part] = pt
+            }
+
+            DispatchQueue.main.async {
+                cb(positions)
+            }
+        }
     }
 
     // MARK: - Scene assembly
 
     private func makeScene(coordinator: Coordinator) -> SCNScene {
         let scene = SCNScene()
-        scene.background.contents = UIColor.black
+        // Transparent background — the SwiftUI AuroraBackground shows through.
+        // Setting `background.contents = nil` would inherit the SCNView's
+        // backgroundColor, which we've also set clear. Result: no SCN backdrop.
+        scene.background.contents = nil
 
         // Real HDR IBL — the biggest single quality lever. Without an actual
         // environment image, PBR metallics show no indirect specular and look
@@ -144,7 +200,8 @@ struct BikeSceneView: UIViewRepresentable {
         let bikeBottomY = worldMin.y
         let longestHorizontal = max(worldMax.x - worldMin.x, worldMax.z - worldMin.z)
 
-        // Camera + orbit rig
+        // Camera + orbit rig. Distance multiplier tightened from 1.85 → 1.35 so
+        // the bike fills the frame instead of floating in negative space.
         let cam = SCNCamera()
         cam.fieldOfView = 30
         cam.zNear = 0.05
@@ -157,12 +214,10 @@ struct BikeSceneView: UIViewRepresentable {
         cam.bloomBlurRadius = 6.0
         cam.colorFringeIntensity = 0.0
         cam.contrast = 0.20
-        cam.saturation = 1.0                   // Keep original colours intact.
+        cam.saturation = 1.0
         cam.vignettingPower = 0.55
         cam.vignettingIntensity = 0.45
-        // DOF focused on the bike centre so the floor reflection softens
-        // without smearing the bike itself.
-        let camDist = longestHorizontal * 1.85
+        let camDist = longestHorizontal * 1.35
         cam.focalDistance = CGFloat(camDist)
         cam.focalBlurRadius = 2.5
         cam.focalLength = 50
@@ -175,15 +230,14 @@ struct BikeSceneView: UIViewRepresentable {
         let orbitRig = SCNNode()
         orbitRig.name = "orbitRig"
         orbitRig.position = SCNVector3(0, bikeCenterY, 0)
-        orbitRig.eulerAngles = SCNVector3(-0.24, 0.55, 0)   // slightly more elevated pitch
+        orbitRig.eulerAngles = SCNVector3(-0.24, 0.55, 0)
         orbitRig.addChildNode(camNode)
         scene.rootNode.addChildNode(orbitRig)
         orbitRig.runAction(SCNAction.repeatForever(
             SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
         ))
 
-        // Lighting — IBL does most of the work, directional lights only sharpen
-        // edges and cast a shadow. Lower intensities than pre-IBL setup.
+        // Lighting
         let key = SCNLight()
         key.type = .directional
         key.intensity = 900
@@ -216,17 +270,17 @@ struct BikeSceneView: UIViewRepresentable {
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Shadow-catching floor. Slight reflectivity gives the bike a sense of
-        // being on a surface without competing for visual attention.
+        // Shadow-catching floor with subtle reflectivity.
         let floor = SCNFloor()
-        floor.reflectivity = 0.12
+        floor.reflectivity = 0.10
         floor.reflectionFalloffEnd = 1.6
         floor.reflectionResolutionScaleFactor = 0.5
         let fmat = SCNMaterial()
         fmat.lightingModel = .physicallyBased
         fmat.diffuse.contents = UIColor.black
         fmat.metalness.contents = 0.0
-        fmat.roughness.contents = 0.6
+        fmat.roughness.contents = 0.7
+        fmat.transparency = 0.5      // lets the SwiftUI bg blend through near horizon
         floor.firstMaterial = fmat
         let floorNode = SCNNode(geometry: floor)
         floorNode.position = SCNVector3(0, bikeBottomY - 0.001, 0)
@@ -256,7 +310,6 @@ struct BikeSceneView: UIViewRepresentable {
             bike.addChildNode(child)
         }
 
-        // Auto-fit: longest dim → 4 units, X/Z centred, bottom on Y=0
         let (minP, maxP) = bike.boundingBox
         let size = SCNVector3(maxP.x - minP.x, maxP.y - minP.y, maxP.z - minP.z)
         let longest = max(max(abs(size.x), abs(size.y)), abs(size.z))
@@ -267,22 +320,12 @@ struct BikeSceneView: UIViewRepresentable {
         let centerZ = (minP.z + maxP.z) / 2
         bike.position = SCNVector3(-centerX * scale, -minP.y * scale, -centerZ * scale)
 
-        // Map meshes into BikePart regions for tap-to-data hit testing.
         clusterAndNamePartNodes(bike)
-
-        // Promote materials to PBR (some GLB importers default to Phong) and
-        // boost headlight emission so it reads as the "powered on" element.
-        // CRITICAL: do NOT touch diffuse / normal / metalness / roughness —
-        // those come from the GLB and stripping them is what made the bike
-        // look like a CAD render. Fabi 2026-05-11: "stop stripping it."
         promoteMaterialsToPBR(bike)
 
         return bike
     }
 
-    /// Cluster the GLB's anonymous mesh nodes into BikePart regions by
-    /// position. Works for any model where the source author didn't name
-    /// nodes "headlight" / "tank" / etc.
     private func clusterAndNamePartNodes(_ bike: SCNNode) {
         struct MeshInfo {
             let node: SCNNode
@@ -341,18 +384,11 @@ struct BikeSceneView: UIViewRepresentable {
             m.node.name = part.nodeName
         }
 
-        // Smallest mesh in the front-top region is best-effort headlight.
         if let smallest = frontTopMeshes.min(by: { $0.volume < $1.volume }) {
             smallest.node.name = BikePart.headlight.nodeName
         }
     }
 
-    /// Promote each material to PBR (some GLTF importers default to Phong)
-    /// and boost the headlight cluster's emission so it reads as "lit".
-    ///
-    /// Does NOT modify diffuse, normal, metalness, roughness, or AO —
-    /// those come from the GLB textures and stripping them removes the
-    /// surface detail that distinguishes a textured render from a CAD model.
     private func promoteMaterialsToPBR(_ bike: SCNNode) {
         bike.enumerateChildNodes { node, _ in
             guard let geom = node.geometry else { return }
@@ -360,15 +396,13 @@ struct BikeSceneView: UIViewRepresentable {
             for mat in geom.materials {
                 mat.lightingModel = .physicallyBased
                 if isHeadlight {
-                    // Let the headlight glow — overrides whatever emission the
-                    // GLB shipped with (which is typically none for a lamp lens).
                     mat.emission.contents = UIColor(white: 0.92, alpha: 1)
                 }
             }
         }
     }
 
-    // MARK: - Procedural fallback (kept simple — used only if GLB missing)
+    // MARK: - Procedural fallback
 
     private func primitiveBike() -> SCNNode {
         let bike = SCNNode()
