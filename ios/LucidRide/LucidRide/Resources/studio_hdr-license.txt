@@ -1,0 +1,10 @@
+HDR Environment Map: Studio Small 04 (1K)
+Author: Sergej Majboroda
+Source: https://polyhaven.com/a/studio_small_04
+License: CC0 (Public Domain)
+        https://creativecommons.org/publicdomain/zero/1.0/
+
+Used as scene.lightingEnvironment.contents in BikeSceneView.swift for PBR
+indirect specular. Provides the studio reflection environment for metallic
+surfaces on the bike model. Background remains pure black — the HDR is used
+only for image-based lighting, not as the visible backdrop.

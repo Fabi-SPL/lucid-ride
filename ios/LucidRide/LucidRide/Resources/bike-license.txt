@@ -5,10 +5,11 @@ License: Creative Commons Attribution 3.0 (CC-BY 3.0)
         https://creativecommons.org/licenses/by/3.0/
 
 Chosen for the Lucid Ride aesthetic: a clean low-poly sport-bike silhouette
-with proper fairings, swept tail, and racing posture — runtime-recoloured to
-match the Lucid logo (pure black-and-white monochrome on a black background,
-no chroma accents). The low-poly geometry is intentional and read as
-"logo-style" rather than photorealistic.
+with proper fairings, swept tail, and racing posture. The model ships with
+its original PBR materials intact — the renderer combines them with HDR
+image-based lighting (Polyhaven Studio Small 04, CC0) to produce a premium
+product-showcase look despite the low triangle count.
 
-The model is shipped unmodified in geometry. Material colour overrides are
-applied at scene-load time to enforce the monochrome look.
+The model is shipped unmodified in geometry and materials. Only the
+headlight material's emission is boosted at scene-load so the lamp reads
+as "powered on" against the dark background.
