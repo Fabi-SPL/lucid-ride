@@ -148,6 +148,12 @@ jobs:
             echo '{"name":"Lucid AltStore","identifier":"com.fabi.lucid.altstore","apps":[]}' > /tmp/cur.json
           fi
 
+          # appPermissions shape: AltStore's Codable requires
+          #   entitlements: [{name: string}]                     (NOT [string])
+          #   privacy:      [{name, usageDescription}]           (NOT {key: desc} dict)
+          # The faq.altstore.io docs page is outdated and shows the legacy
+          # shape, but the real source decoder rejects the legacy shape with
+          # "data isn't in the correct format". See landmines doc.
           NEW_ENTRY=$(cat <<JSONEND
           {
             "name": "Lucid Ride",
@@ -164,22 +170,52 @@ jobs:
             "size": ${IPA_SIZE},
             "minOSVersion": "26.0",
             "versions": [{"version":"1.0.${RUN_NUMBER}","buildVersion":"${RUN_NUMBER}","date":"${BUILD_DATE_ISO}","size":${IPA_SIZE},"downloadURL":"${DOWNLOAD_URL}","localizedDescription":"Build ${RUN_NUMBER}","minOSVersion":"26.0"}],
-            "appPermissions": {"entitlements":["com.apple.security.application-groups"],"privacy":{"NSBluetoothAlwaysUsageDescription":"Connects to bike telemetry hardware via BLE.","NSBluetoothPeripheralUsageDescription":"Connects to bike telemetry hardware via BLE (legacy peripheral key).","NSLocationWhenInUseUsageDescription":"Records ride GPS track.","NSLocationAlwaysAndWhenInUseUsageDescription":"Records ride GPS in background.","NSMotionUsageDescription":"iPhone IMU fallback for lean angle."}}
+            "appPermissions": {
+              "entitlements": [{"name":"com.apple.security.application-groups"}],
+              "privacy": [
+                {"name":"NSBluetoothAlwaysUsageDescription","usageDescription":"Connects to bike telemetry hardware via BLE."},
+                {"name":"NSBluetoothPeripheralUsageDescription","usageDescription":"Connects to bike telemetry hardware via BLE (legacy peripheral key)."},
+                {"name":"NSLocationWhenInUseUsageDescription","usageDescription":"Records ride GPS track."},
+                {"name":"NSLocationAlwaysAndWhenInUseUsageDescription","usageDescription":"Records ride GPS in background."},
+                {"name":"NSMotionUsageDescription","usageDescription":"iPhone IMU fallback for lean angle."}
+              ]
+            }
           }
           JSONEND
           )
 
-          # Defensive: strip `marketplaceID` from EVERY app entry. Bridge and
-          # Health CIs in other repos keep injecting this field, and any source
-          # containing it gets rejected by AltStore Classic with:
-          # "The source contains notarized apps which are not supported by this
-          # version of AltStore." Our IPAs are sideload, NOT marketplace-notarized.
-          jq --argjson newApp "$NEW_ENTRY" \
-            '.apps |= ((map(select(.bundleIdentifier != "com.fabi.lucidride")) + [$newApp]) | map(del(.marketplaceID)))' \
-            /tmp/cur.json > /tmp/altstore-source.json
+          # Defensive transforms applied to EVERY app entry every build:
+          #
+          # 1. Strip `marketplaceID` — Bridge and Health CIs in other repos
+          #    keep injecting it. AltStore Classic rejects any source with
+          #    that field present on any app with "The source contains
+          #    notarized apps which are not supported by this version."
+          #
+          # 2. Convert `appPermissions.entitlements` from [string] to
+          #    [{name: string}] if any string entry is found.
+          #
+          # 3. Convert `appPermissions.privacy` from {key: desc} dict to
+          #    [{name: key, usageDescription: desc}] array if it's still
+          #    in dict form.
+          jq --argjson newApp "$NEW_ENTRY" '
+            .apps |= (
+              (map(select(.bundleIdentifier != "com.fabi.lucidride")) + [$newApp])
+              | map(del(.marketplaceID))
+              | map(
+                  if (.appPermissions.entitlements? | type) == "array" and ((.appPermissions.entitlements | length) > 0) and ((.appPermissions.entitlements[0] | type) == "string")
+                  then .appPermissions.entitlements |= map({name: .})
+                  else . end
+                )
+              | map(
+                  if (.appPermissions.privacy? | type) == "object"
+                  then .appPermissions.privacy |= ([to_entries[] | {name: .key, usageDescription: .value}])
+                  else . end
+                )
+            )
+          ' /tmp/cur.json > /tmp/altstore-source.json
 
           echo "=== Final source.json apps ==="
-          jq '.apps | map({id: .bundleIdentifier, marketplaceID: (.marketplaceID // "(absent — correct)")})' /tmp/altstore-source.json
+          jq '.apps | map({id: .bundleIdentifier, mktID: (.marketplaceID // "absent"), entShape: (.appPermissions.entitlements | if length>0 then (.[0]|type) else "empty" end), privShape: (.appPermissions.privacy | type)})' /tmp/altstore-source.json
 
       - name: Upload IPA + source.json to Supabase Storage
         env:
