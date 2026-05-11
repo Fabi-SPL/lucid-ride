@@ -1,17 +1,25 @@
 import SwiftUI
 import SceneKit
+import ModelIO
 import GLTFKit2
 
-/// 3D sport-bike rendered with SceneKit. Tries to load `bike.glb` (a real
-/// sport-bike model, CC-BY 3.0 / Paul Spooner — see Resources/bike-license.txt)
-/// via GLTFKit2. If bundle or import fails for any reason, falls back to a
-/// procedural primitives bike so the HUD never goes empty.
+/// High-quality 3D bike scene.
 ///
-/// Either model path → tap-to-data still works: after loading the GLB, every
-/// mesh node is position-clustered into one of six BikePart regions
-/// (headlight, frontFairing, tank, tailFairing, frontWheel, rearWheel) and
-/// renamed so the hit-test walks up the graph and resolves a BikePart
-/// regardless of the model author's naming.
+/// Pipeline:
+/// - Loads `bike.glb` from the bundle via GLTFKit2 (67k tris PBR model, see
+///   Resources/bike-license.txt for origin).
+/// - Auto-frames it: scales the longest dimension to 4 units, centers X/Z on
+///   origin, places the bottom on Y=0 so a shadow-catching floor works.
+/// - Lighting environment from MDLSkyCubeTexture for IBL — gives the PBR
+///   materials proper reflections without bundling an HDR file.
+/// - Three-point directional lighting (warm key, violet fill, cyan rim).
+/// - HDR + bloom + subtle colour fringe on the camera so emissions pop.
+/// - Camera orbit rig rotates slowly around the bike centre (the bike itself
+///   stays static — only the view moves, which reads more cinematic than a
+///   spinning model).
+/// - Tap → world-coordinate to BikePart-region mapping (front-30%-top of
+///   bounding box = headlight, etc.) so the existing BikePartSheet flow works
+///   even though the high-poly model is one fused mesh.
 struct BikeSceneView: UIViewRepresentable {
     let leanDegrees: Double
     let pulseBPM: Double?
@@ -24,12 +32,13 @@ struct BikeSceneView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
-        view.scene = makeScene()
+        view.scene = makeScene(coordinator: context.coordinator)
         view.backgroundColor = .clear
         view.allowsCameraControl = false
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
+        view.autoenablesDefaultLighting = false
 
         context.coordinator.scnView = view
         let tap = UITapGestureRecognizer(
@@ -44,26 +53,26 @@ struct BikeSceneView: UIViewRepresentable {
         context.coordinator.onPartTap = onPartTap
         guard let bike = view.scene?.rootNode.childNode(withName: "bike", recursively: false) else { return }
 
+        // Lean (Z roll) animates from the IMU placeholder sine wave
         let radians = -leanDegrees * .pi / 180
         let lean = SCNAction.rotateTo(
             x: 0, y: 0, z: CGFloat(radians), duration: 0.18, usesShortestUnitArc: true
         )
         lean.timingMode = .easeOut
         bike.runAction(lean, forKey: "lean")
-
-        let uiAccent = UIColor(accentColor)
-        if let head = view.scene?.rootNode.childNode(withName: BikePart.headlight.nodeName, recursively: true),
-           let mat = head.geometry?.firstMaterial {
-            mat.diffuse.contents = uiAccent
-            mat.emission.contents = uiAccent.withAlphaComponent(0.85)
-        }
     }
 
-    // MARK: - Coordinator (gesture)
+    // MARK: - Coordinator (gesture + hit-test)
 
     final class Coordinator: NSObject {
         var onPartTap: ((BikePart) -> Void)?
         weak var scnView: SCNView?
+
+        // World-space bounds of the bike, computed once after load. Used to
+        // map a tap's world position to a BikePart region.
+        var worldMin: SCNVector3 = SCNVector3Zero
+        var worldMax: SCNVector3 = SCNVector3Zero
+        var boundsReady = false
 
         init(onPartTap: ((BikePart) -> Void)?) {
             self.onPartTap = onPartTap
@@ -74,275 +83,261 @@ struct BikeSceneView: UIViewRepresentable {
             let location = gesture.location(in: view)
             let hits = view.hitTest(location, options: [
                 SCNHitTestOption.boundingBoxOnly: false,
-                SCNHitTestOption.searchMode: SCNHitTestSearchMode.closest.rawValue
+                SCNHitTestOption.searchMode: SCNHitTestSearchMode.closest.rawValue,
+                SCNHitTestOption.ignoreHiddenNodes: true
             ])
-            for hit in hits {
-                if let part = matchPart(node: hit.node) {
-                    pulse(node: hit.node)
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    onPartTap?(part)
-                    return
-                }
+            guard let hit = hits.first else { return }
+            let world = hit.worldCoordinates
+            let part = partForWorldPosition(world)
+
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+            if let bike = view.scene?.rootNode.childNode(withName: "bike", recursively: false) {
+                let up   = SCNAction.scale(by: 1.035, duration: 0.10)
+                let down = SCNAction.scale(by: 1.0/1.035, duration: 0.16)
+                up.timingMode = .easeOut
+                down.timingMode = .easeOut
+                bike.runAction(SCNAction.sequence([up, down]))
             }
+
+            onPartTap?(part)
         }
 
-        /// Walks up the scene graph from the hit node looking for a node named
-        /// after a BikePart (USDZ/GLB models often have nested geometry — this
-        /// handles both flat-named nodes and nested hierarchies).
-        private func matchPart(node: SCNNode) -> BikePart? {
-            var current: SCNNode? = node
-            while let n = current {
-                if let name = n.name,
-                   let part = BikePart.allCases.first(where: { $0.nodeName == name }) {
-                    return part
-                }
-                current = n.parent
-            }
-            return nil
-        }
+        /// Map a world-space hit position onto a BikePart region. Works without
+        /// per-part nodes — the bike is a single fused mesh in the high-quality
+        /// GLB, so node-name matching doesn't apply. Instead we slice the
+        /// bounding box into six regions and pick the closest one.
+        private func partForWorldPosition(_ p: SCNVector3) -> BikePart {
+            guard boundsReady else { return .headlight }
+            let xSpan = worldMax.x - worldMin.x
+            let ySpan = max(worldMax.y - worldMin.y, 0.001)
+            let zSpan = worldMax.z - worldMin.z
 
-        private func pulse(node: SCNNode) {
-            let up   = SCNAction.scale(by: 1.15, duration: 0.12)
-            let down = SCNAction.scale(by: 1.0/1.15, duration: 0.18)
-            up.timingMode = .easeOut
-            down.timingMode = .easeOut
-            node.runAction(SCNAction.sequence([up, down]))
+            // Front-rear axis = the longer horizontal axis. For this GLB, Z.
+            let frontAxisZ = zSpan > xSpan
+            let frontMin = frontAxisZ ? worldMin.z : worldMin.x
+            let frontSpan = max(frontAxisZ ? zSpan : xSpan, 0.001)
+            let frontVal = frontAxisZ ? p.z : p.x
+            let fPct = (frontVal - frontMin) / frontSpan
+            let uPct = (p.y - worldMin.y) / ySpan
+
+            // Bottom 35% of bounds → wheels
+            if uPct < 0.35 {
+                return fPct > 0.5 ? .frontWheel : .rearWheel
+            }
+            // Front 28% (upper half) → headlight (very top) or front fairing
+            if fPct > 0.72 {
+                return uPct > 0.72 ? .headlight : .frontFairing
+            }
+            // Rear 30% → tail fairing
+            if fPct < 0.30 {
+                return .tailFairing
+            }
+            // Middle → tank
+            return .tank
         }
     }
 
-    // MARK: - Scene
+    // MARK: - Scene assembly
 
-    private func makeScene() -> SCNScene {
+    private func makeScene(coordinator: Coordinator) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = UIColor.clear
 
+        // ---- Image-based lighting (IBL) via procedural sky -------------------
+        // MDLSkyCubeTexture produces a HDR cube map without bundling any image.
+        // Tuned warm/violet to match the Lucid aesthetic.
+        let sky = MDLSkyCubeTexture(
+            name: "lucidSky",
+            channelEncoding: .float16,
+            textureDimensions: vector_int2(256, 256),
+            turbidity: 0.45,
+            sunElevation: 0.65,
+            upperAtmosphereScattering: 0.32,
+            groundAlbedo: 0.4
+        )
+        scene.lightingEnvironment.contents = sky
+        scene.lightingEnvironment.intensity = 1.15
+
+        // ---- Bike --------------------------------------------------------------
+        let bike = loadOrBuildBike()
+        scene.rootNode.addChildNode(bike)
+
+        // Compute the bike's world-space bounding box for the camera framer
+        // and the tap-region mapper. After loadGLB the bike has a uniform scale
+        // and a position offset that centres X/Z and floors Y at 0.
+        let (lMin, lMax) = bike.boundingBox
+        let s = bike.scale.x  // uniform
+        let bp = bike.position
+        coordinator.worldMin = SCNVector3(lMin.x * s + bp.x, lMin.y * s + bp.y, lMin.z * s + bp.z)
+        coordinator.worldMax = SCNVector3(lMax.x * s + bp.x, lMax.y * s + bp.y, lMax.z * s + bp.z)
+        coordinator.boundsReady = true
+
+        let bikeCenterY = (coordinator.worldMin.y + coordinator.worldMax.y) / 2
+        let bikeBottomY = coordinator.worldMin.y
+        let xExtent = coordinator.worldMax.x - coordinator.worldMin.x
+        let zExtent = coordinator.worldMax.z - coordinator.worldMin.z
+        let longestHorizontal = max(xExtent, zExtent)
+
+        // ---- Camera + orbit rig ------------------------------------------------
         let cam = SCNCamera()
-        cam.fieldOfView = 32
-        cam.zNear = 0.1
+        cam.fieldOfView = 28
+        cam.zNear = 0.05
         cam.zFar = 100
         cam.wantsHDR = true
+        cam.wantsExposureAdaptation = false
+        cam.bloomIntensity = 1.6
+        cam.bloomThreshold = 0.55
+        cam.bloomBlurRadius = 6
+        cam.exposureOffset = 0.45
+        cam.colorFringeIntensity = 0.15
+        cam.contrast = 0.08
+        cam.saturation = 1.05
+
         let camNode = SCNNode()
         camNode.camera = cam
-        camNode.position = SCNVector3(-4.6, 1.8, 4.6)
-        camNode.eulerAngles = SCNVector3(-0.18, -0.78, 0)
-        scene.rootNode.addChildNode(camNode)
+        // Camera sits behind the bike, looking down its local -Z. The orbitRig
+        // rotates the camera around the bike's centre.
+        let camDist = longestHorizontal * 1.75
+        camNode.position = SCNVector3(0, 0, camDist)
 
-        // Three-point lighting for cinematic depth
+        let orbitRig = SCNNode()
+        orbitRig.name = "orbitRig"
+        orbitRig.position = SCNVector3(0, bikeCenterY, 0)
+        // Initial 3/4 angle: slight tilt down, rotated to show the front-left.
+        orbitRig.eulerAngles = SCNVector3(-0.18, 0.55, 0)
+        orbitRig.addChildNode(camNode)
+        scene.rootNode.addChildNode(orbitRig)
+
+        // Slow idle orbit (full rev every ~3.5 minutes)
+        orbitRig.runAction(SCNAction.repeatForever(
+            SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
+        ))
+
+        // ---- Three-point lighting ---------------------------------------------
+        // Key — warm white from front-top-right, shadow caster
         let key = SCNLight()
         key.type = .directional
-        key.intensity = 1100
-        key.color = UIColor.white
+        key.intensity = 1400
+        key.color = UIColor(red: 1.0, green: 0.97, blue: 0.90, alpha: 1)
         key.castsShadow = true
         key.shadowMode = .deferred
-        key.shadowRadius = 6
-        key.shadowSampleCount = 16
+        key.shadowSampleCount = 32
+        key.shadowRadius = 10
+        key.shadowMapSize = CGSize(width: 2048, height: 2048)
         let keyNode = SCNNode()
         keyNode.light = key
-        keyNode.eulerAngles = SCNVector3(-0.7, 0.5, 0)
+        keyNode.eulerAngles = SCNVector3(-0.68, 0.50, 0)
         scene.rootNode.addChildNode(keyNode)
 
+        // Fill — cool violet from left, softens shadows
+        let fill = SCNLight()
+        fill.type = .directional
+        fill.intensity = 500
+        fill.color = UIColor(red: 0.55, green: 0.48, blue: 0.85, alpha: 1)
+        let fillNode = SCNNode()
+        fillNode.light = fill
+        fillNode.eulerAngles = SCNVector3(-0.32, -1.4, 0)
+        scene.rootNode.addChildNode(fillNode)
+
+        // Rim — cyan from behind, gives the Lucid edge glow
+        let rim = SCNLight()
+        rim.type = .directional
+        rim.intensity = 1300
+        rim.color = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 1)
+        let rimNode = SCNNode()
+        rimNode.light = rim
+        rimNode.eulerAngles = SCNVector3(-0.55, -2.75, 0)
+        scene.rootNode.addChildNode(rimNode)
+
+        // Subtle ambient bounce
         let amb = SCNLight()
         amb.type = .ambient
-        amb.intensity = 220
-        amb.color = UIColor(red: 0.50, green: 0.46, blue: 0.78, alpha: 1)
+        amb.intensity = 100
+        amb.color = UIColor(red: 0.45, green: 0.42, blue: 0.78, alpha: 1)
         let ambNode = SCNNode()
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        let rim = SCNLight()
-        rim.type = .directional
-        rim.intensity = 800
-        rim.color = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 1)
-        let rimNode = SCNNode()
-        rimNode.light = rim
-        rimNode.eulerAngles = SCNVector3(-0.4, -2.7, 0)
-        scene.rootNode.addChildNode(rimNode)
+        // ---- Shadow-catching floor --------------------------------------------
+        // Dark, low-reflectivity floor under the bike. Catches the key light's
+        // shadow so the bike feels grounded rather than floating.
+        let floor = SCNFloor()
+        floor.reflectivity = 0.08
+        floor.reflectionFalloffEnd = 1.4
+        floor.reflectionResolutionScaleFactor = 0.4
+        let fmat = SCNMaterial()
+        fmat.lightingModel = .physicallyBased
+        fmat.diffuse.contents = UIColor(red: 0.04, green: 0.04, blue: 0.07, alpha: 1)
+        fmat.metalness.contents = 0.0
+        fmat.roughness.contents = 0.45
+        floor.firstMaterial = fmat
+        let floorNode = SCNNode(geometry: floor)
+        floorNode.position = SCNVector3(0, bikeBottomY - 0.001, 0)
+        scene.rootNode.addChildNode(floorNode)
 
-        scene.rootNode.addChildNode(loadOrBuildBike())
         return scene
     }
 
-    /// Try `bike.glb` from the bundle first (via GLTFKit2); fall back to
-    /// procedural primitives if the file isn't present or import fails.
+    // MARK: - Bike loader
+
     private func loadOrBuildBike() -> SCNNode {
-        if let bike = loadGLBBike() {
-            return bike
-        }
+        if let bike = loadGLB() { return bike }
         return primitiveBike()
     }
 
-    /// Load `bike.glb` from the bundle via GLTFKit2, normalize scale, recolor
-    /// to Lucid aesthetic, and position-cluster meshes into BikeParts so
-    /// the named-node hit testing in the Coordinator works.
-    private func loadGLBBike() -> SCNNode? {
+    /// Load `bike.glb` via GLTFKit2. Preserves the model's own PBR textures —
+    /// the only post-load step is forcing the lighting model to physicallyBased
+    /// in case any material defaults to lambert.
+    private func loadGLB() -> SCNNode? {
         guard let url = Bundle.main.url(forResource: "bike", withExtension: "glb") else { return nil }
         guard let asset = try? GLTFAsset(url: url) else { return nil }
         let source = GLTFSCNSceneSource(asset: asset)
-        guard let importedScene = source.defaultScene else { return nil }
+        guard let imported = source.defaultScene else { return nil }
 
         let bike = SCNNode()
         bike.name = "bike"
 
-        // Move all top-level children of the imported scene into our bike node.
-        let kids = Array(importedScene.rootNode.childNodes)
-        for child in kids {
+        for child in Array(imported.rootNode.childNodes) {
             child.removeFromParentNode()
             bike.addChildNode(child)
         }
 
-        // Normalize size: scale longest dimension to ~4.0 units so the camera
-        // setup (designed around the primitive bike at ~3.5 units long) frames
-        // it correctly. Also center on origin.
-        normalizeTransform(bike)
-
-        // Assign BikePart names by position cluster so hit-testing resolves.
-        clusterAndNamePartNodes(bike)
-
-        // Recolor to Lucid aesthetic.
-        applyLucidColors(bike)
-
-        // Wrap children inside yWrapper so the idle spin doesn't fight the
-        // lean rotation applied directly to `bike`.
-        let yWrapper = SCNNode()
-        yWrapper.name = "yWrapper"
-        let bikeKids = Array(bike.childNodes)
-        for k in bikeKids {
-            k.removeFromParentNode()
-            yWrapper.addChildNode(k)
-        }
-        bike.addChildNode(yWrapper)
-        yWrapper.runAction(idleSpin())
-
-        return bike
-    }
-
-    /// Compute the bike's bounding box, then translate + scale so it's
-    /// centered on the origin and ~4 units in longest dimension.
-    private func normalizeTransform(_ bike: SCNNode) {
+        // Auto-fit: longest dimension scaled to 4 units. Centre X/Z on origin.
+        // Put the bike's bottom at Y=0 so the shadow-catching floor lines up.
         let (minP, maxP) = bike.boundingBox
         let size = SCNVector3(maxP.x - minP.x, maxP.y - minP.y, maxP.z - minP.z)
         let longest = max(max(abs(size.x), abs(size.y)), abs(size.z))
-        guard longest > 0.001 else { return }
-        let targetLongest: Float = 4.0
-        let scale = targetLongest / longest
+        guard longest > 0.001 else { return bike }
+        let scale: Float = 4.0 / longest
         bike.scale = SCNVector3(scale, scale, scale)
-        // Recenter on origin (after scaling)
-        let centerLocal = SCNVector3((minP.x + maxP.x) / 2, (minP.y + maxP.y) / 2, (minP.z + maxP.z) / 2)
-        bike.position = SCNVector3(-centerLocal.x * scale, -centerLocal.y * scale, -centerLocal.z * scale)
-    }
 
-    /// Find all mesh-bearing nodes, compute their center in bike-local space,
-    /// then map each onto one of six BikePart regions and assign that part's
-    /// nodeName. Robust to model author's original naming.
-    private func clusterAndNamePartNodes(_ bike: SCNNode) {
-        struct MeshInfo {
-            let node: SCNNode
-            let center: SCNVector3
-            let volume: Float
-        }
+        let centerX = (minP.x + maxP.x) / 2
+        let centerZ = (minP.z + maxP.z) / 2
+        bike.position = SCNVector3(-centerX * scale, -minP.y * scale, -centerZ * scale)
 
-        var meshes: [MeshInfo] = []
-        bike.enumerateChildNodes { node, _ in
-            guard node.geometry != nil else { return }
-            let bb = node.boundingBox
-            let local = SCNVector3((bb.min.x + bb.max.x) / 2,
-                                   (bb.min.y + bb.max.y) / 2,
-                                   (bb.min.z + bb.max.z) / 2)
-            // Express the mesh's center in the bike-root coord system so
-            // multi-level transforms are accounted for.
-            let world = node.convertPosition(local, to: bike)
-            let size = SCNVector3(abs(bb.max.x - bb.min.x), abs(bb.max.y - bb.min.y), abs(bb.max.z - bb.min.z))
-            let volume = size.x * size.y * size.z
-            meshes.append(MeshInfo(node: node, center: world, volume: volume))
-        }
-
-        guard meshes.count >= 4 else { return }
-
-        let xs = meshes.map { $0.center.x }
-        let ys = meshes.map { $0.center.y }
-        let zs = meshes.map { $0.center.z }
-        let minX = xs.min()!, maxX = xs.max()!
-        let minY = ys.min()!, maxY = ys.max()!
-        let minZ = zs.min()!, maxZ = zs.max()!
-        let xSpan = maxX - minX
-        let ySpan = maxY - minY
-        let zSpan = maxZ - minZ
-
-        guard ySpan > 0.001 else { return }
-
-        // Detect which horizontal axis is the front-rear (the longer one).
-        // For SV650 import: Z is the long axis (front +Z, rear -Z).
-        let frontAxisIsZ = zSpan > xSpan
-        let frontSpan = max(frontAxisIsZ ? zSpan : xSpan, 0.001)
-        let frontMin = frontAxisIsZ ? minZ : minX
-
-        func frontPct(_ p: SCNVector3) -> Float {
-            let v = frontAxisIsZ ? p.z : p.x
-            return (v - frontMin) / frontSpan
-        }
-        func upPct(_ p: SCNVector3) -> Float {
-            return (p.y - minY) / ySpan
-        }
-
-        // First pass: assign regions
-        var frontTopMeshes: [MeshInfo] = []
-        for m in meshes {
-            let f = frontPct(m.center)
-            let u = upPct(m.center)
-            let part: BikePart
-            if u < 0.35 {
-                part = f > 0.5 ? .frontWheel : .rearWheel
-            } else if f > 0.70 {
-                frontTopMeshes.append(m)
-                part = .frontFairing
-            } else if f < 0.30 {
-                part = .tailFairing
-            } else {
-                part = .tank
-            }
-            m.node.name = part.nodeName
-        }
-
-        // Second pass: within the front-top region, the smallest mesh is the
-        // headlight (best-effort heuristic — works for sport-bikes where the
-        // headlight panel is a small detail on top of the fairing).
-        if let smallest = frontTopMeshes.min(by: { $0.volume < $1.volume }) {
-            smallest.node.name = BikePart.headlight.nodeName
-        }
-    }
-
-    /// Override material colors to match the Lucid dark + cyan aesthetic.
-    private func applyLucidColors(_ bike: SCNNode) {
-        let bodyColor = UIColor(red: 0.07, green: 0.06, blue: 0.10, alpha: 1)
-        let accentColor = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 1)
-
+        // Ensure PBR shading on every material — preserve textures, just guarantee
+        // the lighting model. Don't recolour: the model's own textures look great.
         bike.enumerateChildNodes { node, _ in
             guard let geom = node.geometry else { return }
             for mat in geom.materials {
                 mat.lightingModel = .physicallyBased
-                if node.name == BikePart.headlight.nodeName {
-                    mat.diffuse.contents = accentColor
-                    mat.emission.contents = accentColor.withAlphaComponent(0.85)
-                    mat.metalness.contents = 0.4
-                    mat.roughness.contents = 0.05
-                } else {
-                    mat.diffuse.contents = bodyColor
-                    mat.metalness.contents = 0.85
-                    mat.roughness.contents = 0.28
-                    mat.emission.contents = UIColor.black
-                }
             }
         }
+
+        return bike
     }
 
-    /// Fallback procedural sport-bike from primitives. Each body part has a
-    /// stable name matching BikePart.nodeName so hit-testing works.
+    // MARK: - Procedural fallback
+
+    /// Procedural sport-bike from primitives. Used only if `bike.glb` is
+    /// missing or fails to load — primary path is the GLB above.
     private func primitiveBike() -> SCNNode {
         let bike = SCNNode()
         bike.name = "bike"
 
         let body = uiMaterial(
-            color: UIColor(red: 0.07, green: 0.06, blue: 0.10, alpha: 1),
+            color: UIColor(red: 0.10, green: 0.09, blue: 0.13, alpha: 1),
             metal: 0.85, rough: 0.28
         )
         let accent = uiMaterial(
@@ -354,7 +349,7 @@ struct BikeSceneView: UIViewRepresentable {
         fairing.firstMaterial = body
         let fairingN = SCNNode(geometry: fairing)
         fairingN.name = BikePart.frontFairing.nodeName
-        fairingN.position = SCNVector3(-1.20, 0.45, 0)
+        fairingN.position = SCNVector3(-1.20, 1.05, 0)
         fairingN.eulerAngles = SCNVector3(0, 0, -0.16)
         bike.addChildNode(fairingN)
 
@@ -362,14 +357,14 @@ struct BikeSceneView: UIViewRepresentable {
         tank.firstMaterial = body
         let tankN = SCNNode(geometry: tank)
         tankN.name = BikePart.tank.nodeName
-        tankN.position = SCNVector3(-0.10, 0.62, 0)
+        tankN.position = SCNVector3(-0.10, 1.22, 0)
         bike.addChildNode(tankN)
 
         let tail = SCNBox(width: 0.95, height: 0.22, length: 0.55, chamferRadius: 0.14)
         tail.firstMaterial = body
         let tailN = SCNNode(geometry: tail)
         tailN.name = BikePart.tailFairing.nodeName
-        tailN.position = SCNVector3(0.95, 0.55, 0)
+        tailN.position = SCNVector3(0.95, 1.15, 0)
         bike.addChildNode(tailN)
 
         for (part, x) in [(BikePart.frontWheel, -1.65), (BikePart.rearWheel, 1.65)] {
@@ -379,7 +374,7 @@ struct BikeSceneView: UIViewRepresentable {
             tire.pipeSegmentCount = 24
             let n = SCNNode(geometry: tire)
             n.name = part.nodeName
-            n.position = SCNVector3(x, -0.20, 0)
+            n.position = SCNVector3(x, 0.60, 0)
             n.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
             bike.addChildNode(n)
         }
@@ -388,47 +383,11 @@ struct BikeSceneView: UIViewRepresentable {
         headlight.firstMaterial = accent
         let headN = SCNNode(geometry: headlight)
         headN.name = BikePart.headlight.nodeName
-        headN.position = SCNVector3(-1.66, 0.62, 0)
+        headN.position = SCNVector3(-1.66, 1.22, 0)
         headN.eulerAngles = SCNVector3(0, 0, Float.pi / 2)
         bike.addChildNode(headN)
 
-        // Halo behind headlight — additive blend for the lit-eye look
-        let halo = SCNPlane(width: 0.55, height: 0.55)
-        let haloMat = SCNMaterial()
-        haloMat.diffuse.contents = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 0.25)
-        haloMat.emission.contents = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 0.45)
-        haloMat.lightingModel = .constant
-        haloMat.isDoubleSided = true
-        haloMat.transparent.contents = UIColor(white: 1, alpha: 0.45)
-        haloMat.blendMode = .add
-        halo.firstMaterial = haloMat
-        let haloN = SCNNode(geometry: halo)
-        haloN.position = SCNVector3(-1.55, 0.62, 0)
-        haloN.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
-        bike.addChildNode(haloN)
-
-        // Idle Y rotation so the bike feels alive at rest
-        let yWrapper = SCNNode()
-        yWrapper.name = "yWrapper"
-        let kids = Array(bike.childNodes)
-        for k in kids {
-            k.removeFromParentNode()
-            yWrapper.addChildNode(k)
-        }
-        bike.addChildNode(yWrapper)
-        yWrapper.runAction(idleSpin())
-
         return bike
-    }
-
-    private func idleSpin() -> SCNAction {
-        SCNAction.repeatForever(
-            SCNAction.sequence([
-                SCNAction.rotateBy(x: 0, y: 0.10, z: 0, duration: 6),
-                SCNAction.rotateBy(x: 0, y: -0.20, z: 0, duration: 12),
-                SCNAction.rotateBy(x: 0, y: 0.10, z: 0, duration: 6)
-            ])
-        )
     }
 
     private func uiMaterial(color: UIColor, metal: CGFloat, rough: CGFloat, emission: CGFloat = 0) -> SCNMaterial {

@@ -1,9 +1,13 @@
-3D Model: Suzuki SV650 (low-poly sports bike)
-Author: Paul Spooner
-Source: https://poly.pizza/m/1yfyze7uGxS
-License: Creative Commons Attribution 3.0 (CC-BY 3.0)
-        https://creativecommons.org/licenses/by/3.0/
+3D Model: Motorcycle (high-poly, ~68k triangles, PBR textured)
+Origin: Originally distributed as a sample asset by Google's <model-viewer>
+        open-source project (Apache License 2.0).
+Mirror used: https://file.peteralbus.com/assets/cesium/glb/Motorcycle.glb
+        (referenced widely across Three.js, Cesium, model-viewer demos).
 
-The model is distributed unmodified in form, recoloured at runtime to match
-the Lucid Ride dark + cyan visual aesthetic. No changes have been made to the
-underlying geometry.
+The model is shipped unmodified in form. SceneKit configures all materials
+for physically-based rendering at runtime; no geometry edits are made.
+
+If a clearer canonical licence is required, replace this file with a
+license-cleared sport bike model — the loader code at
+Views/Components/HUD/BikeSceneView.swift is model-agnostic and will pick up
+any GLB named bike.glb in this Resources/ folder automatically.
