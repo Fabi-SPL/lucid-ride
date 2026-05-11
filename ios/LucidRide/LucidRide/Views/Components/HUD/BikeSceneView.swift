@@ -2,32 +2,35 @@ import SwiftUI
 import SceneKit
 import GLTFKit2
 
-/// Premium product-showcase scene for the bike.
+/// Cinematic product-showcase scene for the bike.
 ///
-/// Renders the bundled GLB through GLTFKit2 with the model's original PBR
-/// textures intact (do NOT strip them — Fabi's directive 2026-05-11). Quality
-/// comes from three production techniques:
+/// "Black warehouse with direct lights" aesthetic per Fabi 2026-05-11:
+/// dark dramatic environment, hard key + rim lights creating a chiaroscuro
+/// pool, no even softbox fill. Comes from three combined techniques:
 ///
-/// 1. HDR image-based lighting (`scene.lightingEnvironment` = Polyhaven Studio
-///    Small 04, CC0). PBR materials NEED a real environment image for indirect
-///    specular — flat UIColor environments make metallic surfaces look like
-///    dead plastic.
-/// 2. Original normal maps are preserved (do NOT set `mat.normal.contents = nil`).
-///    Stripping normals on a low-poly model creates visible faceting on every
-///    curved fairing and wheel arch.
-/// 3. HDR camera with measured bloom + vignette + DOF that won't fight the IBL.
-///
-/// Background is TRANSPARENT — the SCNView blends onto the SwiftUI
-/// `AuroraBackground` underneath. Set `isOpaque = false` and clear all the
-/// background contents inside the scene.
+/// 1. Dark HDR IBL (`abandoned_workshop_02_1k.hdr` — Polyhaven CC0). A mostly
+///    black environment with a few bright direct sources. PBR materials use
+///    this for indirect specular only — chrome reflects the workshop's bright
+///    spots without being flooded by ambient fill. Intensity dialled to 0.8
+///    instead of 1.6 so directional lights dominate the shading direction.
+/// 2. Cinematic 3-point lighting with a 5:1 key/fill ratio. Hard key from
+///    upper front-right, dim cool fill from front-left, hot white rim from
+///    behind. Shadows are deep and deferred. The fill is intentionally cooler
+///    than the key (warm-cool separation, classic film grammar).
+/// 3. Manual orbit + pinch zoom on top of the auto-rotate. User can grab the
+///    bike and inspect it from any angle; auto-rotate pauses while the user
+///    interacts, resumes after 3 seconds of stillness.
 ///
 /// Pipeline:
 /// - Load bike.glb via GLTFKit2 (PBR materials come through automatically).
-/// - Position-cluster the 16 anonymous meshes into 6 BikePart regions for
+/// - Position-cluster the 28 anonymous meshes into 6 BikePart regions for
 ///   tap-to-data hit testing.
-/// - Light: HDR IBL + a soft key fill + dim ambient. The HDR carries most of
-///   the work — directional lights only add edge definition.
-/// - Camera: orbit rig revolves slowly around the bike's vertical centre.
+/// - Light: dark HDR + cinematic 3-point + ambient. The HDR carries indirect
+///   reflection; directionals carry shading direction; ambient lifts the
+///   blackest blacks just enough so the bike isn't lost in shadow.
+/// - Camera: orbit rig auto-rotates. Pan gesture rotates the rig in real
+///   time. Pinch gesture scales `camNode.position.z` to zoom. Auto-rotate
+///   resumes 3 s after the last gesture.
 /// - Every render frame: project each named bike-part node's world position
 ///   to 2-D screen space and surface it via `onPartScreenPositions` so the
 ///   ContentView overlay can draw tappable icons / arrows that orbit with
@@ -46,22 +49,36 @@ struct BikeSceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
         view.scene = makeScene(coordinator: context.coordinator)
-        view.backgroundColor = .clear           // let AuroraBackground show through
+        view.backgroundColor = .clear           // let SwiftUI bg show through
         view.isOpaque = false
-        view.allowsCameraControl = false
+        view.allowsCameraControl = false        // we drive the orbit ourselves
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
         view.autoenablesDefaultLighting = false
 
         context.coordinator.scnView = view
-        view.delegate = context.coordinator      // SCNSceneRendererDelegate for projection
+        view.delegate = context.coordinator
 
         let tap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
         )
         view.addGestureRecognizer(tap)
+
+        let pan = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        pan.maximumNumberOfTouches = 1
+        view.addGestureRecognizer(pan)
+
+        let pinch = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePinch(_:))
+        )
+        view.addGestureRecognizer(pinch)
+
         return view
     }
 
@@ -83,10 +100,20 @@ struct BikeSceneView: UIViewRepresentable {
         var onPartTap: ((BikePart) -> Void)?
         var onPositions: (([BikePart: CGPoint]) -> Void)?
         weak var scnView: SCNView?
+        weak var orbitRig: SCNNode?
+        weak var camNode: SCNNode?
+
+        // Initial framing distance — captured once at scene build so zoom is
+        // a multiplier on it, not a raw absolute world distance.
+        var baseCamDist: Float = 4.0
 
         // Throttle projection callback to ~30 Hz to keep SwiftUI re-renders cheap.
         private var lastProjectionTime: TimeInterval = 0
         private let projectionInterval: TimeInterval = 1.0 / 30.0
+
+        // Manual-orbit state. While true, auto-rotate is suspended.
+        private var userInteracting = false
+        private var resumeWorkItem: DispatchWorkItem?
 
         init(onPartTap: ((BikePart) -> Void)?,
              onPositions: (([BikePart: CGPoint]) -> Void)?) {
@@ -112,6 +139,65 @@ struct BikeSceneView: UIViewRepresentable {
             }
         }
 
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = scnView, let rig = orbitRig else { return }
+            switch gesture.state {
+            case .began:
+                beginInteraction()
+                rig.removeAction(forKey: "autoOrbit")
+            case .changed:
+                let t = gesture.translation(in: view)
+                // Horizontal drag → Y rotation; vertical drag → X tilt (clamped).
+                let rotY = Float(t.x) * 0.005
+                let rotX = Float(t.y) * 0.003
+                var e = rig.eulerAngles
+                e.y += rotY
+                e.x = clamp(e.x + rotX, min: -0.6, max: 0.05)
+                rig.eulerAngles = e
+                gesture.setTranslation(.zero, in: view)
+            case .ended, .cancelled, .failed:
+                scheduleAutoOrbitResume()
+            default: break
+            }
+        }
+
+        @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let cam = camNode else { return }
+            switch gesture.state {
+            case .began:
+                beginInteraction()
+            case .changed:
+                let factor = Float(1.0 / gesture.scale)
+                let newZ = clamp(cam.position.z * factor,
+                                 min: baseCamDist * 0.45,
+                                 max: baseCamDist * 2.4)
+                cam.position.z = newZ
+                gesture.scale = 1.0
+            case .ended, .cancelled, .failed:
+                scheduleAutoOrbitResume()
+            default: break
+            }
+        }
+
+        private func beginInteraction() {
+            userInteracting = true
+            resumeWorkItem?.cancel()
+            resumeWorkItem = nil
+        }
+
+        private func scheduleAutoOrbitResume() {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, let rig = self.orbitRig else { return }
+                self.userInteracting = false
+                let spin = SCNAction.repeatForever(
+                    SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
+                )
+                rig.runAction(spin, forKey: "autoOrbit")
+            }
+            resumeWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
+        }
+
         private func matchPart(node: SCNNode) -> BikePart? {
             var current: SCNNode? = node
             while let n = current {
@@ -132,6 +218,10 @@ struct BikeSceneView: UIViewRepresentable {
             node.runAction(SCNAction.sequence([up, down]))
         }
 
+        private func clamp<T: Comparable>(_ v: T, min lo: T, max hi: T) -> T {
+            return Swift.max(lo, Swift.min(hi, v))
+        }
+
         // MARK: SCNSceneRendererDelegate
 
         func renderer(_ renderer: SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
@@ -139,9 +229,6 @@ struct BikeSceneView: UIViewRepresentable {
             if time - lastProjectionTime < projectionInterval { return }
             lastProjectionTime = time
 
-            // Walk every named bike-part SCNNode and project its world centre
-            // to screen space. Skip parts whose projected point lies behind the
-            // camera (Z >= 1) or off-screen.
             var positions: [BikePart: CGPoint] = [:]
             guard let bike = scene.rootNode.childNode(withName: "bike", recursively: false) else { return }
 
@@ -153,10 +240,7 @@ struct BikeSceneView: UIViewRepresentable {
                                              (bb.min.z + bb.max.z) / 2)
                 let world = node.convertPosition(localCenter, to: nil)
                 let projected = view.projectPoint(world)
-                // projected.z: 0 = near plane, 1 = far plane. Skip behind-camera.
                 if projected.z < 0 || projected.z > 1 { continue }
-                // On iOS projectPoint returns view-coordinate POINTS — no need
-                // to divide by contentScaleFactor.
                 let pt = CGPoint(x: CGFloat(projected.x), y: CGFloat(projected.y))
                 positions[part] = pt
             }
@@ -171,20 +255,16 @@ struct BikeSceneView: UIViewRepresentable {
 
     private func makeScene(coordinator: Coordinator) -> SCNScene {
         let scene = SCNScene()
-        // Transparent background — the SwiftUI AuroraBackground shows through.
-        // Setting `background.contents = nil` would inherit the SCNView's
-        // backgroundColor, which we've also set clear. Result: no SCN backdrop.
-        scene.background.contents = nil
+        scene.background.contents = nil    // SwiftUI gradient shows through
 
-        // Real HDR IBL — the biggest single quality lever. Without an actual
-        // environment image, PBR metallics show no indirect specular and look
-        // like dead plastic. Polyhaven Studio Small 04 is CC0 (see
-        // Resources/studio_hdr-license.txt). Bundle-loaded as a raw URL because
-        // UIImage(named:) can't open .hdr — SceneKit accepts URL contents.
-        if let hdrURL = Bundle.main.url(forResource: "studio_small_04_1k", withExtension: "hdr") {
+        // Dark HDR — Polyhaven Abandoned Workshop 02 CC0. Mostly black with
+        // small direct sources. PBR metallics reflect those direct sources
+        // without being flooded by even ambient. Intensity dialed back so
+        // the three-point lighting (below) defines shading direction.
+        if let hdrURL = Bundle.main.url(forResource: "abandoned_workshop_02_1k", withExtension: "hdr") {
             scene.lightingEnvironment.contents = hdrURL
         }
-        scene.lightingEnvironment.intensity = 1.6
+        scene.lightingEnvironment.intensity = 0.85
 
         // Bike
         let bike = loadOrBuildBike()
@@ -200,32 +280,33 @@ struct BikeSceneView: UIViewRepresentable {
         let bikeBottomY = worldMin.y
         let longestHorizontal = max(worldMax.x - worldMin.x, worldMax.z - worldMin.z)
 
-        // Camera + orbit rig. Distance multiplier tightened from 1.85 → 1.35 so
-        // the bike fills the frame instead of floating in negative space.
+        // Camera
         let cam = SCNCamera()
         cam.fieldOfView = 30
         cam.zNear = 0.05
         cam.zFar = 100
         cam.wantsHDR = true
         cam.wantsExposureAdaptation = false
-        cam.exposureOffset = 0.4
-        cam.bloomIntensity = 0.85
-        cam.bloomThreshold = 0.85
-        cam.bloomBlurRadius = 6.0
+        cam.exposureOffset = 0.5
+        cam.bloomIntensity = 1.0
+        cam.bloomThreshold = 0.7
+        cam.bloomBlurRadius = 8.0
         cam.colorFringeIntensity = 0.0
-        cam.contrast = 0.20
-        cam.saturation = 1.0
-        cam.vignettingPower = 0.55
-        cam.vignettingIntensity = 0.45
+        cam.contrast = 0.35
+        cam.saturation = 1.05
+        cam.vignettingPower = 0.85
+        cam.vignettingIntensity = 0.65
         let camDist = longestHorizontal * 1.35
         cam.focalDistance = CGFloat(camDist)
         cam.focalBlurRadius = 2.5
         cam.focalLength = 50
         cam.fStop = 6.0
+        coordinator.baseCamDist = camDist
 
         let camNode = SCNNode()
         camNode.camera = cam
         camNode.position = SCNVector3(0, 0, camDist)
+        coordinator.camNode = camNode
 
         let orbitRig = SCNNode()
         orbitRig.name = "orbitRig"
@@ -233,54 +314,86 @@ struct BikeSceneView: UIViewRepresentable {
         orbitRig.eulerAngles = SCNVector3(-0.24, 0.55, 0)
         orbitRig.addChildNode(camNode)
         scene.rootNode.addChildNode(orbitRig)
+        coordinator.orbitRig = orbitRig
+
+        // Auto-rotate; paused on user gesture, resumes 3s after release.
         orbitRig.runAction(SCNAction.repeatForever(
             SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
-        ))
+        ), forKey: "autoOrbit")
 
-        // Lighting
+        // === Cinematic 3-point lighting ===
+        // Key: hard, hot, upper-front-right. The dominant shading source.
         let key = SCNLight()
         key.type = .directional
-        key.intensity = 900
-        key.color = UIColor.white
+        key.intensity = 1600
+        key.color = UIColor(red: 1.00, green: 0.98, blue: 0.94, alpha: 1)  // ~5200K warm white
         key.castsShadow = true
         key.shadowMode = .deferred
-        key.shadowSampleCount = 32
-        key.shadowRadius = 8
+        key.shadowSampleCount = 48
+        key.shadowRadius = 12
         key.shadowMapSize = CGSize(width: 2048, height: 2048)
-        key.shadowColor = UIColor(white: 0.0, alpha: 0.8)
+        key.shadowColor = UIColor(white: 0.0, alpha: 0.92)
         let keyNode = SCNNode()
         keyNode.light = key
-        keyNode.eulerAngles = SCNVector3(-0.65, 0.45, 0)
+        keyNode.eulerAngles = SCNVector3(-0.75, 0.55, 0)
         scene.rootNode.addChildNode(keyNode)
 
+        // Fill: dim, cool, front-left. Lifts the shadow side just enough so
+        // detail survives. Cool tint creates the classic warm/cool film
+        // grammar that reads as "cinematic."
+        let fill = SCNLight()
+        fill.type = .directional
+        fill.intensity = 320          // ~5:1 key:fill ratio
+        fill.color = UIColor(red: 0.72, green: 0.80, blue: 0.95, alpha: 1)
+        let fillNode = SCNNode()
+        fillNode.light = fill
+        fillNode.eulerAngles = SCNVector3(-0.30, -1.20, 0)
+        scene.rootNode.addChildNode(fillNode)
+
+        // Rim: hot, hard, behind-and-slightly-up. Separates the bike from
+        // the dark background by tracing its silhouette in white.
         let rim = SCNLight()
         rim.type = .directional
-        rim.intensity = 700
+        rim.intensity = 1800
         rim.color = UIColor.white
         let rimNode = SCNNode()
         rimNode.light = rim
-        rimNode.eulerAngles = SCNVector3(-0.55, -2.75, 0)
+        rimNode.eulerAngles = SCNVector3(-0.45, -2.95, 0)
         scene.rootNode.addChildNode(rimNode)
 
+        // Kicker: short side accent on the opposite side from key. Adds a
+        // second small highlight on chrome surfaces.
+        let kicker = SCNLight()
+        kicker.type = .directional
+        kicker.intensity = 420
+        kicker.color = UIColor(red: 0.95, green: 0.95, blue: 1.00, alpha: 1)
+        let kickerNode = SCNNode()
+        kickerNode.light = kicker
+        kickerNode.eulerAngles = SCNVector3(-0.10, 2.10, 0)
+        scene.rootNode.addChildNode(kickerNode)
+
+        // Ambient: barely-there fill so blackest blacks aren't pure void.
         let amb = SCNLight()
         amb.type = .ambient
-        amb.intensity = 40
-        amb.color = UIColor(white: 0.6, alpha: 1)
+        amb.intensity = 25
+        amb.color = UIColor(white: 0.55, alpha: 1)
         let ambNode = SCNNode()
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Shadow-catching floor with subtle reflectivity.
+        // Glossy black floor — like a polished studio plinth. Higher
+        // reflectivity than before to catch the rim and kicker as a
+        // ground-side mirror image.
         let floor = SCNFloor()
-        floor.reflectivity = 0.10
-        floor.reflectionFalloffEnd = 1.6
-        floor.reflectionResolutionScaleFactor = 0.5
+        floor.reflectivity = 0.18
+        floor.reflectionFalloffEnd = 2.2
+        floor.reflectionResolutionScaleFactor = 0.6
         let fmat = SCNMaterial()
         fmat.lightingModel = .physicallyBased
         fmat.diffuse.contents = UIColor.black
         fmat.metalness.contents = 0.0
-        fmat.roughness.contents = 0.7
-        fmat.transparency = 0.5      // lets the SwiftUI bg blend through near horizon
+        fmat.roughness.contents = 0.55
+        fmat.transparency = 0.55
         floor.firstMaterial = fmat
         let floorNode = SCNNode(geometry: floor)
         floorNode.position = SCNVector3(0, bikeBottomY - 0.001, 0)

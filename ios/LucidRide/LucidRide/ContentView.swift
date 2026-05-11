@@ -23,7 +23,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            AuroraBackground(pulseBPM: state.liveHR)
+            StudioBackground()
                 .ignoresSafeArea()
 
             BikeSceneView(
