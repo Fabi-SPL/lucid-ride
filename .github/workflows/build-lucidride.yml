@@ -164,7 +164,7 @@ jobs:
             "size": ${IPA_SIZE},
             "minOSVersion": "26.0",
             "versions": [{"version":"1.0.${RUN_NUMBER}","buildVersion":"${RUN_NUMBER}","date":"${BUILD_DATE_ISO}","size":${IPA_SIZE},"downloadURL":"${DOWNLOAD_URL}","localizedDescription":"Build ${RUN_NUMBER}","minOSVersion":"26.0"}],
-            "appPermissions": {"entitlements":[],"privacy":{"NSBluetoothAlwaysUsageDescription":"Connects to bike telemetry hardware via BLE.","NSLocationWhenInUseUsageDescription":"Records ride GPS track.","NSLocationAlwaysAndWhenInUseUsageDescription":"Records ride GPS in background.","NSMotionUsageDescription":"iPhone IMU fallback for lean angle."}}
+            "appPermissions": {"entitlements":["com.apple.security.application-groups"],"privacy":{"NSBluetoothAlwaysUsageDescription":"Connects to bike telemetry hardware via BLE.","NSBluetoothPeripheralUsageDescription":"Connects to bike telemetry hardware via BLE (legacy peripheral key).","NSLocationWhenInUseUsageDescription":"Records ride GPS track.","NSLocationAlwaysAndWhenInUseUsageDescription":"Records ride GPS in background.","NSMotionUsageDescription":"iPhone IMU fallback for lean angle."}}
           }
           JSONEND
           )
