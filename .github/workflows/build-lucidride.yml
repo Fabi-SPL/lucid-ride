@@ -169,12 +169,17 @@ jobs:
           JSONEND
           )
 
+          # Defensive: strip `marketplaceID` from EVERY app entry. Bridge and
+          # Health CIs in other repos keep injecting this field, and any source
+          # containing it gets rejected by AltStore Classic with:
+          # "The source contains notarized apps which are not supported by this
+          # version of AltStore." Our IPAs are sideload, NOT marketplace-notarized.
           jq --argjson newApp "$NEW_ENTRY" \
-            '.apps |= (map(select(.bundleIdentifier != "com.fabi.lucidride")) + [$newApp])' \
+            '.apps |= ((map(select(.bundleIdentifier != "com.fabi.lucidride")) + [$newApp]) | map(del(.marketplaceID)))' \
             /tmp/cur.json > /tmp/altstore-source.json
 
           echo "=== Final source.json apps ==="
-          jq '.apps | map(.bundleIdentifier)' /tmp/altstore-source.json
+          jq '.apps | map({id: .bundleIdentifier, marketplaceID: (.marketplaceID // "(absent — correct)")})' /tmp/altstore-source.json
 
       - name: Upload IPA + source.json to Supabase Storage
         env:
