@@ -124,23 +124,12 @@ jobs:
           path: ${{ runner.temp }}/LucidRide.ipa
           retention-days: 30
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: lucidride-build-${{ github.run_number }}
-          name: "LucidRide 1.0.${{ github.run_number }}"
-          body: |
-            **Build ${{ github.run_number }}** · commit `${{ github.sha }}`
-
-            **Install via Sideloadly (free, recommended):**
-            1. Download `LucidRide.ipa` below
-            2. Open Sideloadly on your PC → drag the IPA in → sign with your free Apple ID → install
-
-            Or install via AltStore PAL from `https://app.lucid-ai.app/altstore-source.json`.
-          files: ${{ runner.temp }}/LucidRide.ipa
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # NOTE: GitHub Releases are intentionally DISABLED.
+      # Reason: this is a PUBLIC repo, and the Inject auth credentials step
+      # bakes Supabase user creds into the IPA. A public Release made the IPA
+      # discoverable to anyone — a credential leak vector. Distribution goes
+      # ONLY through AltStore PAL (Supabase Storage path, obscured URL),
+      # NOT through GitHub Releases. Do not re-enable without a sign-in screen.
 
       - name: Update AltStore Source JSON (merge — preserve other Lucid apps)
         env:

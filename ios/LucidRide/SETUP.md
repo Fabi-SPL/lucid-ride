@@ -1,69 +1,71 @@
 # Lucid Ride — iOS Setup
 
-Single-screen SwiftUI app: the bike is the menu. Tap any part for that part's telemetry. Built on a GitHub Actions macOS runner, distributed via Sideloadly (recommended) or AltStore PAL (fallback). Live desktop preview via Appetize.io free tier.
+Single-screen SwiftUI app: the bike is the menu. Tap any part for that part's telemetry. Built on a GitHub Actions macOS runner, distributed exclusively via AltStore PAL.
 
-## How distribution works now (after 2026-05-11 rewrite)
+## How distribution works
 
-Three install paths exist, ranked by friction:
+**One install path: AltStore PAL.**
 
-| Path | Cost | Friction | Best for |
-|------|------|----------|----------|
-| **Sideloadly** | Free | Lowest — drag IPA into Sideloadly, daemon auto-re-signs every few days | **Daily use** |
-| **Appetize.io (free tier)** | Free | None on phone — opens in browser as iPhone 15 Pro | **Visual preview, no phone** |
-| **AltStore PAL** | Free | Highest — 7-day manual refresh, schema-validation landmines | Fallback only |
+GitHub Releases are intentionally NOT used. This is a public repo and the CI bakes Supabase auth credentials into the IPA — a Release would make those credentials discoverable to anyone. The IPA lives in Supabase Storage at an obscured URL referenced only by the AltStore source JSON.
 
-The CI workflow produces all three artifacts on every push: a device IPA on GitHub Releases (for Sideloadly + AltStore), a simulator .app uploaded to Appetize (for browser preview), and the AltStore source JSON (for the legacy AltStore PAL flow).
+| Path | Cost | Friction | Notes |
+|------|------|----------|-------|
+| **AltStore PAL** | Free | Medium — 7-day manual refresh in-app | Only supported path. iOS 17.4+ EU only OR sideloaded AltServer (Mac/PC). |
+| ~~Sideloadly~~ | — | — | Disabled. Would require a public IPA URL. |
+| ~~Appetize~~ | — | — | Disabled (no .app upload while creds are baked in). |
+| ~~GitHub Releases~~ | — | — | **Permanently disabled** — public repo + baked credentials. |
 
-## First-time install via Sideloadly (recommended)
+The CI workflow produces a device IPA and an AltStore source JSON on every push to `ios/LucidRide/**`. Both are uploaded to Supabase Storage. The source JSON is served from `https://app.lucid-ai.app/altstore-source.json` (Vercel static file that the Health app re-syncs from Supabase).
 
-**One-time PC setup, ~10 minutes:**
+## First-time install via AltStore PAL
 
-1. Download Sideloadly for Windows: https://sideloadly.io/
-2. Install it. Open it.
-3. Plug your iPhone into the PC via Lightning/USB-C cable.
-4. Sign in to Sideloadly with your **free Apple ID** (not the project owner's — your personal one). Sideloadly only uses this for re-signing; it never shares credentials.
-5. (Optional but recommended) Enable "Anisette" daemon in Sideloadly settings for stable cert refresh.
+**One-time iPhone setup:**
 
-**Every install / update, ~30 seconds:**
+1. Install **AltStore PAL** from the App Store (requires iOS 17.4+ and being in the EU).
+   - Outside EU: install AltServer on a Mac/PC and pair AltStore via Wi-Fi — both Apple devs have walkthroughs.
+2. Open AltStore PAL → Browse tab → Sources → tap **+** in the top-right.
+3. Add source URL: `https://app.lucid-ai.app/altstore-source.json`
+4. Tap **Add Source**. Lucid Ride appears in the source's app list.
+5. Tap **Free** / **Get** next to Lucid Ride. Sign in with your free Apple ID when prompted (used only for the on-device re-sign; never shared).
+6. App installs to home screen.
 
-1. Open https://github.com/Fabi-SPL/lucid-ride/releases/latest in a browser
-2. Download `LucidRide.ipa` from the latest release
-3. Drag the IPA file onto the Sideloadly window
-4. Hit **Start** — it pushes to your iPhone wirelessly (USB only required for first device pair)
-5. App appears on the iPhone home screen ~30 seconds later
+**Every install / update (~10 seconds):**
 
-**Auto re-sign:** Sideloadly's background daemon refreshes the cert every few days while your PC is awake. The 7-day expiration of free-Apple-ID-signed apps becomes invisible as long as you boot the PC at least once a week with Sideloadly running in the tray.
+1. Open AltStore PAL → My Apps tab.
+2. Tap the refresh icon next to Lucid Ride to pull the latest build.
+3. Re-signs and installs in place.
 
-## Desktop preview via Appetize.io (free tier)
+**7-day cert refresh:** Free-Apple-ID-signed apps expire after 7 days. Open AltStore PAL → My Apps → tap the refresh icon (or hit **Refresh All**). That's it — no PC required after the initial AltStore install.
 
-**One-time account setup:**
+## Distribution security note
 
-1. Create a free Appetize account: https://appetize.io/signup
-2. From the Appetize dashboard, generate an API token (Account → API)
-3. In the lucid-ride GitHub repo: Settings → Secrets → Actions → New repository secret
-   - Name: `APPETIZE_API_TOKEN`
-   - Value: (paste the token from step 2)
-4. Push any commit to `ios/LucidRide/**` (or manually re-run the workflow)
-5. The workflow uploads the simulator build. Open the workflow's run summary — at the bottom there's a "Preview URL" notice plus a `publicKey` to save.
-6. Save that publicKey as another GitHub secret: `APPETIZE_PUBLIC_KEY`. From now on every build updates the same Appetize app, keeping the preview URL stable.
+The CI pipeline injects `EE_TASKS_EMAIL` and `EE_TASKS_PASSWORD` into `SupabaseClient.swift` before xcodebuild. Anyone who obtains the IPA can extract those credentials from the compiled binary. Mitigations:
 
-**Daily use:** bookmark the preview URL from step 5. Open it in any browser on your Windows desktop. The app runs as a virtual iPhone 15 Pro. Free tier = 100 min/month, 3 min per session, plenty for solo preview.
+- ✅ No public GitHub Releases (this rule)
+- ✅ IPA URL is in Supabase Storage with an obscure path (only AltStore source references it)
+- ✅ Source JSON URL (`app.lucid-ai.app/altstore-source.json`) is only known to people Fabi shares it with
+- ⚠️ Anyone Fabi shares the source URL with can decompile the IPA. Acceptable trust boundary — same set of people who would have his password anyway.
 
-**What works in the simulator:** the bike scene, the HUD layout, the tap-to-sheet flow, the visual animations, the placeholder telemetry. What doesn't: real heart rate from LucidBridge, real Bluetooth, real motion sensors. Use Sideloadly install for those.
+**The proper fix** (deferred): a Keychain-backed sign-in screen so the IPA contains no credentials at all. Tracked in `.private/CLAUDE.md`.
 
-## AltStore PAL fallback
+## AltStore PAL landmines (documented, do not repeat)
 
-Only use this if both Sideloadly and Appetize are unavailable. The AltStore source URL is `https://app.lucid-ai.app/altstore-source.json` and requires the AltStore PAL app on iPhone. Known landmines (entitlements mismatch, iconURL host, Vercel cache drift) are documented in `.private/CLAUDE.md`.
+Known issues recurring on this pipeline — all fixed, kept here as warnings:
+
+1. **`entitlements` array must match the IPA's real entitlements.** Source JSON `appPermissions.entitlements` must include `"com.apple.security.application-groups"` because `LucidRide.entitlements` ships App Groups. Empty `[]` triggers "data isn't in correct format".
+2. **`iconURL` must be on `app.lucid-ai.app`, NOT Supabase.** AltStore PAL rejects Supabase Storage URLs for iconURL specifically (works fine for downloadURL).
+3. **Vercel `app.lucid-ai.app/altstore-source.json` is a STATIC file**, not a proxy of Supabase canonical. Ride CI writes Supabase. Health CI re-syncs to Vercel. If you only push Ride and don't trigger Health, the public source drifts — manually sync `ee-personal-app/public/altstore-source.json` and push.
+4. **`appPermissions.privacy` is a dict, not an array.** AltStore expects keyed entries (`NSBluetoothAlwaysUsageDescription: "..."`), not a list of strings.
+
+Full diagnostic + recovery commands in `.private/CLAUDE.md`.
 
 ## CI prerequisites (one-time, already done)
 
 Repo secrets that must be set in https://github.com/Fabi-SPL/lucid-ride/settings/secrets/actions:
 
-- `EE_TASKS_EMAIL` — Supabase auth email
-- `EE_TASKS_PASSWORD` — Supabase auth password
-- `SUPABASE_SERVICE_KEY` — Supabase service-role key (used to upload IPA to Storage for the AltStore fallback path)
-- `APPETIZE_API_TOKEN` — Appetize API token (optional — Appetize upload is skipped cleanly if absent)
-- `APPETIZE_PUBLIC_KEY` — Appetize app publicKey (optional — set after first Appetize upload so subsequent builds update the same app)
+- `EE_TASKS_EMAIL` — Supabase auth email (sed-injected into IPA — see security note above)
+- `EE_TASKS_PASSWORD` — Supabase auth password (sed-injected into IPA — see security note above)
+- `SUPABASE_SERVICE_KEY` — Supabase service-role key (uploads IPA + source.json to Storage; CI-only, never in IPA)
 
 ## Local Xcode dev (optional — for iterating on a Mac)
 
@@ -92,10 +94,11 @@ Re-run `xcodegen generate` after adding or removing files.
 - ✅ START / END RIDE pill (floating bottom-right)
 - ✅ Settings sheet (auth status, build version pulled live from Info.plist, sign out)
 - ✅ Landscape-only, status bar hidden, idle timer disabled while app is open
-- ✅ GLTFKit2 SPM dep loads `bike.glb` (Suzuki SV650, CC-BY 3.0 / Paul Spooner) with position-clustered hit testing
+- ✅ GLTFKit2 SPM dep loads `bike.glb` with position-clustered hit testing
 
 ## Phase B (deferred — hardware-pending)
 
+- Keychain-backed sign-in screen (eliminates credential injection — see security note)
 - Health-backend webhook handler (Edge Function — workout-updated event upserts ride aggregates)
 - GoPro GPMF ingest (Edge Function watches a synced folder for new MP4s)
 - RaceBox Mini S CSV pipeline + IMU lean-angle calculation
