@@ -1,16 +1,17 @@
 import SwiftUI
 import SceneKit
+import GLTFKit2
 
-/// Minimalist 3D sport-bike rendered with SceneKit. Single dark body, single
-/// cyan accent on the headlight (matches the Lucid Ride logo aesthetic).
+/// 3D sport-bike rendered with SceneKit. Tries to load `bike.glb` (a real
+/// sport-bike model, CC-BY 3.0 / Paul Spooner — see Resources/bike-license.txt)
+/// via GLTFKit2. If bundle or import fails for any reason, falls back to a
+/// procedural primitives bike so the HUD never goes empty.
 ///
-/// Tries to load `bike.usdz` from the app bundle for higher-quality geometry.
-/// If the model isn't bundled, falls back to a procedural primitives bike.
-/// Either way, key parts are exposed under stable node names so Phase 2
-/// hit-testing works regardless of the model source.
-///
-/// Phase 2: tap any named part → onPartTap fires with the BikePart, the
-/// hit node pulses, and the parent view shows a BikePartSheet.
+/// Either model path → tap-to-data still works: after loading the GLB, every
+/// mesh node is position-clustered into one of six BikePart regions
+/// (headlight, frontFairing, tank, tailFairing, frontWheel, rearWheel) and
+/// renamed so the hit-test walks up the graph and resolves a BikePart
+/// regardless of the model author's naming.
 struct BikeSceneView: UIViewRepresentable {
     let leanDegrees: Double
     let pulseBPM: Double?
@@ -86,7 +87,7 @@ struct BikeSceneView: UIViewRepresentable {
         }
 
         /// Walks up the scene graph from the hit node looking for a node named
-        /// after a BikePart (USDZ models often have nested geometry — this
+        /// after a BikePart (USDZ/GLB models often have nested geometry — this
         /// handles both flat-named nodes and nested hierarchies).
         private func matchPart(node: SCNNode) -> BikePart? {
             var current: SCNNode? = node
@@ -161,25 +162,177 @@ struct BikeSceneView: UIViewRepresentable {
         return scene
     }
 
-    /// Try `bike.usdz` from the bundle first; fall back to procedural primitives
-    /// if the file isn't present. This lets us swap in a downloaded high-quality
-    /// model later without changing any other code.
+    /// Try `bike.glb` from the bundle first (via GLTFKit2); fall back to
+    /// procedural primitives if the file isn't present or import fails.
     private func loadOrBuildBike() -> SCNNode {
-        if let url = Bundle.main.url(forResource: "bike", withExtension: "usdz"),
-           let scene = try? SCNScene(url: url, options: nil) {
-            let bike = SCNNode()
-            bike.name = "bike"
-            scene.rootNode.childNodes.forEach { bike.addChildNode($0) }
-            // Wrap inside yWrapper for idle rotation without fighting lean
-            let yWrapper = SCNNode()
-            yWrapper.name = "yWrapper"
-            bike.childNodes.forEach { yWrapper.addChildNode($0) }
-            bike.childNodes.forEach { $0.removeFromParentNode() }
-            bike.addChildNode(yWrapper)
-            yWrapper.runAction(idleSpin())
+        if let bike = loadGLBBike() {
             return bike
         }
         return primitiveBike()
+    }
+
+    /// Load `bike.glb` from the bundle via GLTFKit2, normalize scale, recolor
+    /// to Lucid aesthetic, and position-cluster meshes into BikeParts so
+    /// the named-node hit testing in the Coordinator works.
+    private func loadGLBBike() -> SCNNode? {
+        guard let url = Bundle.main.url(forResource: "bike", withExtension: "glb") else { return nil }
+        guard let asset = try? GLTFAsset(url: url) else { return nil }
+        let source = GLTFSCNSceneSource(asset: asset)
+        guard let importedScene = source.defaultScene else { return nil }
+
+        let bike = SCNNode()
+        bike.name = "bike"
+
+        // Move all top-level children of the imported scene into our bike node.
+        let kids = Array(importedScene.rootNode.childNodes)
+        for child in kids {
+            child.removeFromParentNode()
+            bike.addChildNode(child)
+        }
+
+        // Normalize size: scale longest dimension to ~4.0 units so the camera
+        // setup (designed around the primitive bike at ~3.5 units long) frames
+        // it correctly. Also center on origin.
+        normalizeTransform(bike)
+
+        // Assign BikePart names by position cluster so hit-testing resolves.
+        clusterAndNamePartNodes(bike)
+
+        // Recolor to Lucid aesthetic.
+        applyLucidColors(bike)
+
+        // Wrap children inside yWrapper so the idle spin doesn't fight the
+        // lean rotation applied directly to `bike`.
+        let yWrapper = SCNNode()
+        yWrapper.name = "yWrapper"
+        let bikeKids = Array(bike.childNodes)
+        for k in bikeKids {
+            k.removeFromParentNode()
+            yWrapper.addChildNode(k)
+        }
+        bike.addChildNode(yWrapper)
+        yWrapper.runAction(idleSpin())
+
+        return bike
+    }
+
+    /// Compute the bike's bounding box, then translate + scale so it's
+    /// centered on the origin and ~4 units in longest dimension.
+    private func normalizeTransform(_ bike: SCNNode) {
+        let (minP, maxP) = bike.boundingBox
+        let size = SCNVector3(maxP.x - minP.x, maxP.y - minP.y, maxP.z - minP.z)
+        let longest = max(max(abs(size.x), abs(size.y)), abs(size.z))
+        guard longest > 0.001 else { return }
+        let targetLongest: Float = 4.0
+        let scale = targetLongest / longest
+        bike.scale = SCNVector3(scale, scale, scale)
+        // Recenter on origin (after scaling)
+        let centerLocal = SCNVector3((minP.x + maxP.x) / 2, (minP.y + maxP.y) / 2, (minP.z + maxP.z) / 2)
+        bike.position = SCNVector3(-centerLocal.x * scale, -centerLocal.y * scale, -centerLocal.z * scale)
+    }
+
+    /// Find all mesh-bearing nodes, compute their center in bike-local space,
+    /// then map each onto one of six BikePart regions and assign that part's
+    /// nodeName. Robust to model author's original naming.
+    private func clusterAndNamePartNodes(_ bike: SCNNode) {
+        struct MeshInfo {
+            let node: SCNNode
+            let center: SCNVector3
+            let volume: Float
+        }
+
+        var meshes: [MeshInfo] = []
+        bike.enumerateChildNodes { node, _ in
+            guard node.geometry != nil else { return }
+            let bb = node.boundingBox
+            let local = SCNVector3((bb.min.x + bb.max.x) / 2,
+                                   (bb.min.y + bb.max.y) / 2,
+                                   (bb.min.z + bb.max.z) / 2)
+            // Express the mesh's center in the bike-root coord system so
+            // multi-level transforms are accounted for.
+            let world = node.convertPosition(local, to: bike)
+            let size = SCNVector3(abs(bb.max.x - bb.min.x), abs(bb.max.y - bb.min.y), abs(bb.max.z - bb.min.z))
+            let volume = size.x * size.y * size.z
+            meshes.append(MeshInfo(node: node, center: world, volume: volume))
+        }
+
+        guard meshes.count >= 4 else { return }
+
+        let xs = meshes.map { $0.center.x }
+        let ys = meshes.map { $0.center.y }
+        let zs = meshes.map { $0.center.z }
+        let minX = xs.min()!, maxX = xs.max()!
+        let minY = ys.min()!, maxY = ys.max()!
+        let minZ = zs.min()!, maxZ = zs.max()!
+        let xSpan = maxX - minX
+        let ySpan = maxY - minY
+        let zSpan = maxZ - minZ
+
+        guard ySpan > 0.001 else { return }
+
+        // Detect which horizontal axis is the front-rear (the longer one).
+        // For SV650 import: Z is the long axis (front +Z, rear -Z).
+        let frontAxisIsZ = zSpan > xSpan
+        let frontSpan = max(frontAxisIsZ ? zSpan : xSpan, 0.001)
+        let frontMin = frontAxisIsZ ? minZ : minX
+
+        func frontPct(_ p: SCNVector3) -> Float {
+            let v = frontAxisIsZ ? p.z : p.x
+            return (v - frontMin) / frontSpan
+        }
+        func upPct(_ p: SCNVector3) -> Float {
+            return (p.y - minY) / ySpan
+        }
+
+        // First pass: assign regions
+        var frontTopMeshes: [MeshInfo] = []
+        for m in meshes {
+            let f = frontPct(m.center)
+            let u = upPct(m.center)
+            let part: BikePart
+            if u < 0.35 {
+                part = f > 0.5 ? .frontWheel : .rearWheel
+            } else if f > 0.70 {
+                frontTopMeshes.append(m)
+                part = .frontFairing
+            } else if f < 0.30 {
+                part = .tailFairing
+            } else {
+                part = .tank
+            }
+            m.node.name = part.nodeName
+        }
+
+        // Second pass: within the front-top region, the smallest mesh is the
+        // headlight (best-effort heuristic — works for sport-bikes where the
+        // headlight panel is a small detail on top of the fairing).
+        if let smallest = frontTopMeshes.min(by: { $0.volume < $1.volume }) {
+            smallest.node.name = BikePart.headlight.nodeName
+        }
+    }
+
+    /// Override material colors to match the Lucid dark + cyan aesthetic.
+    private func applyLucidColors(_ bike: SCNNode) {
+        let bodyColor = UIColor(red: 0.07, green: 0.06, blue: 0.10, alpha: 1)
+        let accentColor = UIColor(red: 0.31, green: 0.82, blue: 0.77, alpha: 1)
+
+        bike.enumerateChildNodes { node, _ in
+            guard let geom = node.geometry else { return }
+            for mat in geom.materials {
+                mat.lightingModel = .physicallyBased
+                if node.name == BikePart.headlight.nodeName {
+                    mat.diffuse.contents = accentColor
+                    mat.emission.contents = accentColor.withAlphaComponent(0.85)
+                    mat.metalness.contents = 0.4
+                    mat.roughness.contents = 0.05
+                } else {
+                    mat.diffuse.contents = bodyColor
+                    mat.metalness.contents = 0.85
+                    mat.roughness.contents = 0.28
+                    mat.emission.contents = UIColor.black
+                }
+            }
+        }
     }
 
     /// Fallback procedural sport-bike from primitives. Each body part has a
@@ -257,8 +410,11 @@ struct BikeSceneView: UIViewRepresentable {
         // Idle Y rotation so the bike feels alive at rest
         let yWrapper = SCNNode()
         yWrapper.name = "yWrapper"
-        bike.childNodes.forEach { yWrapper.addChildNode($0) }
-        bike.childNodes.forEach { $0.removeFromParentNode() }
+        let kids = Array(bike.childNodes)
+        for k in kids {
+            k.removeFromParentNode()
+            yWrapper.addChildNode(k)
+        }
         bike.addChildNode(yWrapper)
         yWrapper.runAction(idleSpin())
 

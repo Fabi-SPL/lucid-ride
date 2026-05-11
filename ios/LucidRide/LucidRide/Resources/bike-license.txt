@@ -1,0 +1,9 @@
+3D Model: Suzuki SV650 (low-poly sports bike)
+Author: Paul Spooner
+Source: https://poly.pizza/m/1yfyze7uGxS
+License: Creative Commons Attribution 3.0 (CC-BY 3.0)
+        https://creativecommons.org/licenses/by/3.0/
+
+The model is distributed unmodified in form, recoloured at runtime to match
+the Lucid Ride dark + cyan visual aesthetic. No changes have been made to the
+underlying geometry.

@@ -7,6 +7,11 @@ options:
   defaultConfig: Release
   groupSortPosition: top
 
+packages:
+  GLTFKit2:
+    url: https://github.com/warrenm/GLTFKit2
+    from: "0.5.15"
+
 settings:
   base:
     DEVELOPMENT_LANGUAGE: en
@@ -28,6 +33,8 @@ targets:
         excludes:
           - "**/*.entitlements"
           - "**/Info.plist"
+    dependencies:
+      - package: GLTFKit2
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.fabi.lucidride
