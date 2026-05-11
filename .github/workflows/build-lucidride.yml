@@ -165,7 +165,8 @@ jobs:
             "screenshotURLs": [],
             "version": "1.0.${RUN_NUMBER}",
             "buildVersion": "${RUN_NUMBER}",
-            "date": "${BUILD_DATE_ISO}",
+            "versionDate": "${BUILD_DATE_ISO}",
+            "versionDescription": "Build ${RUN_NUMBER}",
             "downloadURL": "${DOWNLOAD_URL}",
             "size": ${IPA_SIZE},
             "minOSVersion": "26.0",
@@ -209,6 +210,11 @@ jobs:
               | map(
                   if (.appPermissions.privacy? | type) == "object"
                   then .appPermissions.privacy |= ([to_entries[] | {name: .key, usageDescription: .value}])
+                  else . end
+                )
+              | map(
+                  if .date != null and .versionDate == null
+                  then . + {versionDate: .date} | del(.date)
                   else . end
                 )
             )
