@@ -15,7 +15,7 @@ GitHub Releases are intentionally NOT used. This is a public repo and the CI bak
 | ~~Appetize~~ | — | — | Disabled (no .app upload while creds are baked in). |
 | ~~GitHub Releases~~ | — | — | **Permanently disabled** — public repo + baked credentials. |
 
-The CI workflow produces a device IPA and an AltStore source JSON on every push to `ios/LucidRide/**`. Both are uploaded to Supabase Storage. The source JSON is served from `https://app.lucid-ai.app/altstore-source.json` (Vercel static file that the Health app re-syncs from Supabase).
+The CI workflow produces a device IPA and an AltStore source JSON on every push to `ios/LucidRide/**`. Both are uploaded to Supabase Storage. **AltStore subscribes to the Supabase URL directly** — no Vercel / CDN layer. This is the only stable URL; any other (like `app.lucid-ai.app/altstore-source.json`) is a static copy that drifts and breaks.
 
 ## First-time install via AltStore PAL
 
@@ -24,7 +24,7 @@ The CI workflow produces a device IPA and an AltStore source JSON on every push 
 1. Install **AltStore PAL** from the App Store (requires iOS 17.4+ and being in the EU).
    - Outside EU: install AltServer on a Mac/PC and pair AltStore via Wi-Fi — both Apple devs have walkthroughs.
 2. Open AltStore PAL → Browse tab → Sources → tap **+** in the top-right.
-3. Add source URL: `https://app.lucid-ai.app/altstore-source.json`
+3. Add source URL: `https://db.speed-running-life.com/storage/v1/object/public/ipa-builds/altstore-source.json`
 4. Tap **Add Source**. Lucid Ride appears in the source's app list.
 5. Tap **Free** / **Get** next to Lucid Ride. Sign in with your free Apple ID when prompted (used only for the on-device re-sign; never shared).
 6. App installs to home screen.
@@ -43,7 +43,7 @@ The CI pipeline injects `EE_TASKS_EMAIL` and `EE_TASKS_PASSWORD` into `SupabaseC
 
 - ✅ No public GitHub Releases (this rule)
 - ✅ IPA URL is in Supabase Storage with an obscure path (only AltStore source references it)
-- ✅ Source JSON URL (`app.lucid-ai.app/altstore-source.json`) is only known to people Fabi shares it with
+- ✅ Source JSON URL (Supabase Storage path) is only known to people Fabi shares it with
 - ⚠️ Anyone Fabi shares the source URL with can decompile the IPA. Acceptable trust boundary — same set of people who would have his password anyway.
 
 **The proper fix** (deferred): a Keychain-backed sign-in screen so the IPA contains no credentials at all. Tracked in `.private/CLAUDE.md`.
@@ -52,10 +52,11 @@ The CI pipeline injects `EE_TASKS_EMAIL` and `EE_TASKS_PASSWORD` into `SupabaseC
 
 Known issues recurring on this pipeline — all fixed, kept here as warnings:
 
-1. **`entitlements` array must match the IPA's real entitlements.** Source JSON `appPermissions.entitlements` must include `"com.apple.security.application-groups"` because `LucidRide.entitlements` ships App Groups. Empty `[]` triggers "data isn't in correct format".
-2. **`iconURL` must be on `app.lucid-ai.app`, NOT Supabase.** AltStore PAL rejects Supabase Storage URLs for iconURL specifically (works fine for downloadURL).
-3. **Vercel `app.lucid-ai.app/altstore-source.json` is a STATIC file**, not a proxy of Supabase canonical. Ride CI writes Supabase. Health CI re-syncs to Vercel. If you only push Ride and don't trigger Health, the public source drifts — manually sync `ee-personal-app/public/altstore-source.json` and push.
-4. **`appPermissions.privacy` is a dict, not an array.** AltStore expects keyed entries (`NSBluetoothAlwaysUsageDescription: "..."`), not a list of strings.
+1. **`appPermissions` must use the object-wrapped shape**, NOT the legacy strings/dict shape that faq.altstore.io's docs show. Real Codable wants `entitlements: [{name}]` and `privacy: [{name, usageDescription}]`. This was the actual recurring root cause of "data isn't in correct format."
+2. **`entitlements` must match the IPA's real entitlements file** — declare `com.apple.security.application-groups` because `LucidRide.entitlements` ships App Groups.
+3. **`marketplaceID` field must NOT be present on any app entry.** That field flags apps as Apple-notarized marketplace distribution; AltStore Classic refuses any source carrying it.
+4. **Subscribe AltStore to the Supabase URL directly**, never to the Vercel static copy. The Vercel file (`app.lucid-ai.app/altstore-source.json`) is legacy / not maintained.
+5. **`iconURL` must be on `app.lucid-ai.app`**, NOT Supabase. AltStore rejects Supabase Storage URLs for iconURL specifically (works fine for downloadURL).
 
 Full diagnostic + recovery commands in `.private/CLAUDE.md`.
 
