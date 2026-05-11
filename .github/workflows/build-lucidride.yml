@@ -13,6 +13,11 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      # Job-level env so the Appetize steps' `if:` conditions can read these.
+      # Both are empty if the secrets aren't set, which makes the steps no-op.
+      APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+      APPETIZE_PUBLIC_KEY: ${{ secrets.APPETIZE_PUBLIC_KEY }}
 
     steps:
       - name: Checkout
@@ -123,11 +128,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: lucidride-build-${{ github.run_number }}
-          name: "LucidRide build ${{ github.run_number }}"
+          name: "LucidRide 1.0.${{ github.run_number }}"
           body: |
-            Build ${{ github.run_number }} — ${{ github.sha }}
+            **Build ${{ github.run_number }}** · commit `${{ github.sha }}`
+
+            **Install via Sideloadly (free, recommended):**
+            1. Download `LucidRide.ipa` below
+            2. Open Sideloadly on your PC → drag the IPA in → sign with your free Apple ID → install
+
+            Or install via AltStore PAL from `https://app.lucid-ai.app/altstore-source.json`.
           files: ${{ runner.temp }}/LucidRide.ipa
-          make_latest: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -214,3 +225,98 @@ jobs:
             --data-binary @ios/LucidRide/build-assets/icon-512.png
 
           echo "Storage upload complete."
+
+      # === Simulator build for browser preview via Appetize.io (free tier) ===
+      # Runs only when APPETIZE_API_TOKEN is set in repo secrets.
+      # Produces a .app bundle for the iOS Simulator, zips it, uploads to Appetize.
+      # First upload returns a publicKey — save that as APPETIZE_PUBLIC_KEY secret
+      # so subsequent builds update the same app (keeps the preview URL stable).
+
+      - name: Build for iOS Simulator (Appetize preview)
+        if: env.APPETIZE_API_TOKEN != ''
+        working-directory: ios/LucidRide
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+        run: |
+          xcodebuild build \
+            -project LucidRide.xcodeproj \
+            -scheme LucidRide \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            -derivedDataPath $RUNNER_TEMP/SimulatorBuild \
+            -sdk iphonesimulator \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SWIFT_VERSION=5.0 \
+            CURRENT_PROJECT_VERSION=${GITHUB_RUN_NUMBER} \
+            MARKETING_VERSION=1.0.${GITHUB_RUN_NUMBER} \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            2>&1 | tee sim-build.log || true
+
+          grep -i "error:" sim-build.log || echo "No explicit sim errors found"
+
+      - name: Zip Simulator .app for Appetize
+        if: env.APPETIZE_API_TOKEN != ''
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+        run: |
+          SIM_APP=$(find $RUNNER_TEMP/SimulatorBuild -name "LucidRide.app" -type d | head -1)
+          if [ -z "$SIM_APP" ]; then
+            echo "WARN: simulator .app not found, skipping Appetize upload"
+            echo "APPETIZE_SKIP=1" >> $GITHUB_ENV
+            exit 0
+          fi
+          echo "Found sim app at: $SIM_APP"
+          cd "$(dirname "$SIM_APP")"
+          ditto -c -k --sequesterRsrc --keepParent LucidRide.app $RUNNER_TEMP/LucidRide-sim.app.zip
+          echo "Sim app.zip size: $(du -h $RUNNER_TEMP/LucidRide-sim.app.zip | cut -f1)"
+
+      - name: Upload to Appetize.io (free tier preview)
+        if: env.APPETIZE_API_TOKEN != '' && env.APPETIZE_SKIP != '1'
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+          APPETIZE_PUBLIC_KEY: ${{ secrets.APPETIZE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$APPETIZE_PUBLIC_KEY" ]; then
+            echo "::notice::No APPETIZE_PUBLIC_KEY set — creating a NEW Appetize app. Save the returned publicKey as a GitHub secret."
+            RESP=$(curl -fsS \
+              --user "${APPETIZE_API_TOKEN}:" \
+              -F "file=@$RUNNER_TEMP/LucidRide-sim.app.zip" \
+              -F "platform=ios" \
+              -F "note=Build ${GITHUB_RUN_NUMBER} — ${GITHUB_SHA}" \
+              "https://api.appetize.io/v1/apps")
+          else
+            echo "Updating existing Appetize app (publicKey: ${APPETIZE_PUBLIC_KEY:0:8}…)"
+            RESP=$(curl -fsS \
+              --user "${APPETIZE_API_TOKEN}:" \
+              -F "file=@$RUNNER_TEMP/LucidRide-sim.app.zip" \
+              -F "platform=ios" \
+              -F "note=Build ${GITHUB_RUN_NUMBER} — ${GITHUB_SHA}" \
+              "https://api.appetize.io/v1/apps/${APPETIZE_PUBLIC_KEY}")
+          fi
+
+          echo "Appetize response:"
+          echo "$RESP" | head -200
+
+          PUBLIC_KEY=$(echo "$RESP" | sed -nE 's/.*"publicKey"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+          if [ -n "$PUBLIC_KEY" ]; then
+            APP_URL="https://appetize.io/app/${PUBLIC_KEY}?device=iphone15pro&osVersion=18.0"
+            echo "::notice::Preview URL → ${APP_URL}"
+            echo "## Appetize Preview" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🟢 **${APP_URL}**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -z "$APPETIZE_PUBLIC_KEY" ]; then
+              echo "⚠️ **First upload** — copy this publicKey to repo secret \`APPETIZE_PUBLIC_KEY\` so future builds update the same app:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "${PUBLIC_KEY}" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "::warning::Could not parse publicKey from Appetize response"
+          fi
