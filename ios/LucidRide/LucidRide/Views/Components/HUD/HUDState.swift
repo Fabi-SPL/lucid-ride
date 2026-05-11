@@ -1,11 +1,12 @@
 import Foundation
 import SwiftUI
 
-/// Shared live state for the Bike HUD — owned by BikeHUDView, observed by
-/// each HUD page. Centralizes the HR poll, elapsed timer, lap counter,
-/// placeholder motion, ride score, and zone-change particle trigger.
+/// Shared live state for the whole app — owned by ContentView, observed
+/// by the bike scene and the BikePartSheet. Centralizes the HR poll,
+/// elapsed timer, lap counter, placeholder motion, ride score, and
+/// zone-change particle trigger.
 ///
-/// Pages just read; only this object writes.
+/// Views just read; only this object writes.
 @MainActor
 final class HUDState: ObservableObject {
     @Published var liveHR: Double?
