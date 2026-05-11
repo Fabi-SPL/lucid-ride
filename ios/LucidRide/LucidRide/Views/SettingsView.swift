@@ -23,6 +23,7 @@ struct SettingsView: View {
                         accountSection
                         buildSection
                         aboutSection
+                        creditsSection
                         Color.clear.frame(height: 40)
                     }
                     .padding(.horizontal, 22)
@@ -124,6 +125,34 @@ struct SettingsView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
                 )
+        }
+    }
+
+    @ViewBuilder
+    private var creditsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("CREDITS", icon: "scribble.variable")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("3D bike model")
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(DS.Colors.textMuted)
+                Text("\"Motorcycle [Ducati Super Sports]\" by Noah (@Noaah on Sketchfab) — CC BY 4.0")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundStyle(DS.Colors.textSecondary)
+                Text("HDR studio lighting")
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .tracking(0.6)
+                    .foregroundStyle(DS.Colors.textMuted)
+                    .padding(.top, 4)
+                Text("\"Studio Small 04\" HDRI by Sergej Majboroda — Polyhaven CC0")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundStyle(DS.Colors.textSecondary)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+            )
         }
     }
 

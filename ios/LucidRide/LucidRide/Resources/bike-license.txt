@@ -1,15 +1,21 @@
-3D Model: Suzuki SV650 (low-poly sport bike)
-Author: Paul Spooner
-Source: https://poly.pizza/m/1yfyze7uGxS
-License: Creative Commons Attribution 3.0 (CC-BY 3.0)
-        https://creativecommons.org/licenses/by/3.0/
+3D Model: Motorcycle [Ducati Super Sports]
+Author: Noah (@Noaah on Sketchfab)
+Source: https://sketchfab.com/3d-models/motorcycle-ducati-super-sports-ee644039cc634ae88be57e68a83c4aeb
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+        http://creativecommons.org/licenses/by/4.0/
 
-Chosen for the Lucid Ride aesthetic: a clean low-poly sport-bike silhouette
-with proper fairings, swept tail, and racing posture. The model ships with
-its original PBR materials intact — the renderer combines them with HDR
-image-based lighting (Polyhaven Studio Small 04, CC0) to produce a premium
-product-showcase look despite the low triangle count.
+Specifications:
+- 567,213 triangles
+- 28 meshes
+- 22 named PBR materials (chrome, carpaint, glass, leather seat, tire tread,
+  brake disc, calipers, etc.) with embedded texture maps
+- 17.5 MB GLB binary
 
-The model is shipped unmodified in geometry and materials. Only the
-headlight material's emission is boosted at scene-load so the lamp reads
-as "powered on" against the dark background.
+Chosen for the Lucid Ride aesthetic: a production-grade Ducati Super Sports
+sport bike with full fairings, proper sport-bike silhouette, and PBR-correct
+materials. Loaded through GLTFKit2 with the model's original geometry and
+materials intact. The scene combines this with HDR image-based lighting
+(Polyhaven Studio Small 04, CC0) to render at product-showcase quality.
+
+Required attribution per CC BY 4.0 is shown in the in-app Settings → About
+section.
