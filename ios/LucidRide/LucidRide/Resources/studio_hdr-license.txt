@@ -1,21 +1,20 @@
 HDR Environment Maps (image-based lighting + reflections)
 
-Primary (in use):
-- File: abandoned_workshop_02_1k.hdr
-- Author: Dimitrios Savva, Jarod Guest
-- Source: https://polyhaven.com/a/abandoned_workshop_02
-- License: CC0 (Public Domain)
-        https://creativecommons.org/publicdomain/zero/1.0/
-
-Picked for the "black warehouse with direct lights" cinematic aesthetic:
-mostly-dark environment with a few small bright direct sources, creating
-dramatic specular reflections on the bike's chrome and carpaint instead
-of an even softbox fill. Used only as scene.lightingEnvironment.contents
-— never rendered as the visible backdrop.
-
-Fallback (kept in bundle, currently unused):
+Primary (in use as of 2026-05-17):
 - File: studio_small_04_1k.hdr
 - Author: Sergej Majboroda
 - Source: https://polyhaven.com/a/studio_small_04
+- License: CC0 (Public Domain)
+        https://creativecommons.org/publicdomain/zero/1.0/
+
+Bright, even, neutral studio environment. Used only as
+scene.lightingEnvironment.contents (indirect specular for the bike's
+chrome/carpaint) — never rendered as the visible backdrop. This is the
+config Fabi called "looks amazing"; the dark-warehouse experiment was
+reverted as "horrible / wonky."
+
+Bundled but unused (kept for quick A/B if a moodier look is wanted later):
+- File: abandoned_workshop_02_1k.hdr
+- Author: Dimitrios Savva, Jarod Guest
+- Source: https://polyhaven.com/a/abandoned_workshop_02
 - License: CC0
-The earlier even-studio HDR. Available if cinematic mode is undesirable.

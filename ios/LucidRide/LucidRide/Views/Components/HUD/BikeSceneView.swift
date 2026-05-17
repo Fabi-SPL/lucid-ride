@@ -2,21 +2,20 @@ import SwiftUI
 import SceneKit
 import GLTFKit2
 
-/// Cinematic product-showcase scene for the bike.
+/// Clean studio product-showcase scene for the bike.
 ///
-/// "Black warehouse with direct lights" aesthetic per Fabi 2026-05-11:
-/// dark dramatic environment, hard key + rim lights creating a chiaroscuro
-/// pool, no even softbox fill. Comes from three combined techniques:
+/// Reverted 2026-05-17 from the over-dark "warehouse" experiment (Fabi:
+/// "looks a lot worse / horrible / wonky") back toward the bright, calm
+/// studio look he called "amazing." Three combined techniques:
 ///
-/// 1. Dark HDR IBL (`abandoned_workshop_02_1k.hdr` — Polyhaven CC0). A mostly
-///    black environment with a few bright direct sources. PBR materials use
-///    this for indirect specular only — chrome reflects the workshop's bright
-///    spots without being flooded by ambient fill. Intensity dialled to 0.8
-///    instead of 1.6 so directional lights dominate the shading direction.
-/// 2. Cinematic 3-point lighting with a 5:1 key/fill ratio. Hard key from
-///    upper front-right, dim cool fill from front-left, hot white rim from
-///    behind. Shadows are deep and deferred. The fill is intentionally cooler
-///    than the key (warm-cool separation, classic film grammar).
+/// 1. Bright studio HDR IBL (`studio_small_04_1k.hdr` — Polyhaven CC0) at
+///    intensity 1.5. Even, neutral environment; chrome/carpaint get clean
+///    reflections instead of muddy warehouse murk. The HDR does most of the
+///    shading; directional lights are gentle accents.
+/// 2. Calm 3-point: soft near-neutral key, ~2:1 neutral fill, subtle white
+///    rim. Soft shadows (0.55 alpha, large radius), ambient lift 110 so
+///    blacks read charcoal not crushed. No colour casts, no kicker, no
+///    heavy vignette — a product-shoot look, not a moody stage.
 /// 3. Manual orbit + pinch zoom on top of the auto-rotate. User can grab the
 ///    bike and inspect it from any angle; auto-rotate pauses while the user
 ///    interacts, resumes after 3 seconds of stillness.
@@ -257,14 +256,14 @@ struct BikeSceneView: UIViewRepresentable {
         let scene = SCNScene()
         scene.background.contents = nil    // SwiftUI gradient shows through
 
-        // Dark HDR — Polyhaven Abandoned Workshop 02 CC0. Mostly black with
-        // small direct sources. PBR metallics reflect those direct sources
-        // without being flooded by even ambient. Intensity dialed back so
-        // the three-point lighting (below) defines shading direction.
-        if let hdrURL = Bundle.main.url(forResource: "abandoned_workshop_02_1k", withExtension: "hdr") {
+        // Clean studio HDR — Polyhaven Studio Small 04 CC0. Bright, even,
+        // neutral. This is the config Fabi called "looks amazing" before the
+        // over-dark warehouse experiment. PBR chrome/carpaint get clean
+        // reflections without the muddy warehouse murk.
+        if let hdrURL = Bundle.main.url(forResource: "studio_small_04_1k", withExtension: "hdr") {
             scene.lightingEnvironment.contents = hdrURL
         }
-        scene.lightingEnvironment.intensity = 0.85
+        scene.lightingEnvironment.intensity = 1.5
 
         // Bike
         let bike = loadOrBuildBike()
@@ -287,16 +286,17 @@ struct BikeSceneView: UIViewRepresentable {
         cam.zFar = 100
         cam.wantsHDR = true
         cam.wantsExposureAdaptation = false
-        cam.exposureOffset = 0.5
-        cam.bloomIntensity = 1.0
-        cam.bloomThreshold = 0.7
-        cam.bloomBlurRadius = 8.0
+        cam.exposureOffset = 0.32
+        cam.bloomIntensity = 0.65
+        cam.bloomThreshold = 0.88
+        cam.bloomBlurRadius = 5.0
         cam.colorFringeIntensity = 0.0
-        cam.contrast = 0.35
-        cam.saturation = 1.05
-        cam.vignettingPower = 0.85
-        cam.vignettingIntensity = 0.65
-        let camDist = longestHorizontal * 1.35
+        cam.contrast = 0.12
+        cam.saturation = 1.04
+        cam.vignettingPower = 0.40
+        cam.vignettingIntensity = 0.22
+        // Eased framing — 1.35 felt cramped/wonky. 1.5 gives the bike room.
+        let camDist = longestHorizontal * 1.5
         cam.focalDistance = CGFloat(camDist)
         cam.focalBlurRadius = 2.5
         cam.focalLength = 50
@@ -311,7 +311,7 @@ struct BikeSceneView: UIViewRepresentable {
         let orbitRig = SCNNode()
         orbitRig.name = "orbitRig"
         orbitRig.position = SCNVector3(0, bikeCenterY, 0)
-        orbitRig.eulerAngles = SCNVector3(-0.24, 0.55, 0)
+        orbitRig.eulerAngles = SCNVector3(-0.16, 0.55, 0)  // clean 3/4 hero, less downward tilt
         orbitRig.addChildNode(camNode)
         scene.rootNode.addChildNode(orbitRig)
         coordinator.orbitRig = orbitRig
@@ -321,79 +321,70 @@ struct BikeSceneView: UIViewRepresentable {
             SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
         ), forKey: "autoOrbit")
 
-        // === Cinematic 3-point lighting ===
-        // Key: hard, hot, upper-front-right. The dominant shading source.
+        // === Calm studio 3-point ===
+        // The bright HDR (intensity 1.5) does most of the shading now, so
+        // these directionals are gentle accents, not dramatic stage lights.
+        // No heavy colour casts, soft shadows, ~2:1 key:fill — a clean
+        // product-shoot look, not a moody warehouse.
+
+        // Key: soft, near-neutral, upper-front-right.
         let key = SCNLight()
         key.type = .directional
-        key.intensity = 1600
-        key.color = UIColor(red: 1.00, green: 0.98, blue: 0.94, alpha: 1)  // ~5200K warm white
+        key.intensity = 1050
+        key.color = UIColor(red: 1.00, green: 0.99, blue: 0.97, alpha: 1)
         key.castsShadow = true
         key.shadowMode = .deferred
-        key.shadowSampleCount = 48
-        key.shadowRadius = 12
+        key.shadowSampleCount = 32
+        key.shadowRadius = 16            // softer contact shadow
         key.shadowMapSize = CGSize(width: 2048, height: 2048)
-        key.shadowColor = UIColor(white: 0.0, alpha: 0.92)
+        key.shadowColor = UIColor(white: 0.0, alpha: 0.55)  // light, not crushed
         let keyNode = SCNNode()
         keyNode.light = key
-        keyNode.eulerAngles = SCNVector3(-0.75, 0.55, 0)
+        keyNode.eulerAngles = SCNVector3(-0.70, 0.50, 0)
         scene.rootNode.addChildNode(keyNode)
 
-        // Fill: dim, cool, front-left. Lifts the shadow side just enough so
-        // detail survives. Cool tint creates the classic warm/cool film
-        // grammar that reads as "cinematic."
+        // Fill: neutral, ~2:1 ratio. Just opens the shadow side.
         let fill = SCNLight()
         fill.type = .directional
-        fill.intensity = 320          // ~5:1 key:fill ratio
-        fill.color = UIColor(red: 0.72, green: 0.80, blue: 0.95, alpha: 1)
+        fill.intensity = 560
+        fill.color = UIColor(white: 0.96, alpha: 1)
         let fillNode = SCNNode()
         fillNode.light = fill
-        fillNode.eulerAngles = SCNVector3(-0.30, -1.20, 0)
+        fillNode.eulerAngles = SCNVector3(-0.25, -1.15, 0)
         scene.rootNode.addChildNode(fillNode)
 
-        // Rim: hot, hard, behind-and-slightly-up. Separates the bike from
-        // the dark background by tracing its silhouette in white.
+        // Rim: subtle white separation from behind. Not the hot 1800 edge.
         let rim = SCNLight()
         rim.type = .directional
-        rim.intensity = 1800
+        rim.intensity = 650
         rim.color = UIColor.white
         let rimNode = SCNNode()
         rimNode.light = rim
-        rimNode.eulerAngles = SCNVector3(-0.45, -2.95, 0)
+        rimNode.eulerAngles = SCNVector3(-0.50, -2.85, 0)
         scene.rootNode.addChildNode(rimNode)
 
-        // Kicker: short side accent on the opposite side from key. Adds a
-        // second small highlight on chrome surfaces.
-        let kicker = SCNLight()
-        kicker.type = .directional
-        kicker.intensity = 420
-        kicker.color = UIColor(red: 0.95, green: 0.95, blue: 1.00, alpha: 1)
-        let kickerNode = SCNNode()
-        kickerNode.light = kicker
-        kickerNode.eulerAngles = SCNVector3(-0.10, 2.10, 0)
-        scene.rootNode.addChildNode(kickerNode)
-
-        // Ambient: barely-there fill so blackest blacks aren't pure void.
+        // Ambient: clean lift so blacks read as charcoal, not crushed void.
         let amb = SCNLight()
         amb.type = .ambient
-        amb.intensity = 25
-        amb.color = UIColor(white: 0.55, alpha: 1)
+        amb.intensity = 110
+        amb.color = UIColor(white: 0.6, alpha: 1)
         let ambNode = SCNNode()
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Glossy black floor — like a polished studio plinth. Higher
-        // reflectivity than before to catch the rim and kicker as a
-        // ground-side mirror image.
+        // Subtle seamless floor — faint reflection only, mostly lets the
+        // StudioBackground sweep show through so the bike sits on a clean
+        // cyclorama rather than a hard mirror.
         let floor = SCNFloor()
-        floor.reflectivity = 0.18
-        floor.reflectionFalloffEnd = 2.2
-        floor.reflectionResolutionScaleFactor = 0.6
+        floor.reflectivity = 0.10
+        floor.reflectionFalloffEnd = 1.8
+        floor.reflectionResolutionScaleFactor = 0.5
         let fmat = SCNMaterial()
         fmat.lightingModel = .physicallyBased
         fmat.diffuse.contents = UIColor.black
         fmat.metalness.contents = 0.0
-        fmat.roughness.contents = 0.55
-        fmat.transparency = 0.55
+        fmat.roughness.contents = 0.62
+        fmat.transparency = 0.70
         floor.firstMaterial = fmat
         let floorNode = SCNNode(geometry: floor)
         floorNode.position = SCNVector3(0, bikeBottomY - 0.001, 0)
