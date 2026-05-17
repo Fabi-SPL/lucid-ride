@@ -1,31 +1,33 @@
 import Foundation
 
-/// Focused Supabase client for LucidRide — auth + activities (motor_racing) + realtime_health JOINs only.
+/// Focused Supabase client for LucidRide — direct anon-key access, no user auth.
 ///
-/// Cloned conceptually from LucidHealth's SupabaseClient (which is 2200 lines and covers
-/// food, recovery, sleep, BLE telemetry — all of which we don't need here). LucidRide
-/// shares the same Supabase project, anon key, and user_id, but only touches:
-///   - `activities`           — rides tagged `canonical_activity_type = 'motor_racing'`
-///   - `realtime_health`      — read-only JOIN by ride window (HRV/HR profile)
+/// As of 2026-05-17 the app reads/writes Supabase **directly with the public
+/// anon key**. No email/password is baked into the binary anymore (that was the
+/// public-repo credential-leak problem). Scoped RLS policies on the server
+/// (`lucidride_anon_*`) let the `anon` role touch exactly Fabi's rows in:
+///   - `activities`       — rides tagged `canonical_activity_type='motor_racing'` (SELECT/INSERT/UPDATE)
+///   - `realtime_health`  — read-only HR/HRV profile (SELECT)
+///
+/// The anon key is public by design (it ships in every client). Security comes
+/// from the row-scoped server policies, not from hiding the key.
 ///
 /// No dependencies — just URLSession.
 final class SupabaseClient {
 
     static let shared = SupabaseClient()
 
-    // CI replaces these at build time via sed injection (see .github/workflows/build-lucidride.yml)
-    static let prefilledEmail:    String = "BUILD_EMAIL"
-    static let prefilledPassword: String = "BUILD_PASSWORD"
-
     let baseURL = "https://db.speed-running-life.com"
     let anonKey = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3NDEyOTQ4MDAsICJleHAiOiA5OTk5OTk5OTk5fQ.y3KAL0j_RC9hlzrNVkgZXPxifyRZX3cF_d7-iuE4kA8"
     let userId  = "372210e5-1dda-41b3-b759-5ff72293b8ff"
 
-    internal var accessToken: String?
-    private  var tokenExpiry: Date?
-    private  let session = URLSession.shared
+    private let session = URLSession.shared
 
     var onLog: ((String) -> Void)?
+
+    /// Always true now — no user session to expire. Kept so SettingsView /
+    /// ContentView call sites compile unchanged.
+    var isAuthenticated: Bool { true }
 
     private func log(_ msg: String) {
         let full = "[SB] \(msg)"
@@ -33,77 +35,14 @@ final class SupabaseClient {
         onLog?(full)
     }
 
-    // UserDefaults — sandboxed per app bundle. Per-app keys keep sibling-app
-    // login states from shadowing each other.
-    private var email: String {
-        UserDefaults.standard.string(forKey: "lucidride_email") ?? ""
-    }
-    private var password: String {
-        UserDefaults.standard.string(forKey: "lucidride_password") ?? ""
-    }
-
-    var isAuthenticated: Bool {
-        accessToken != nil && (tokenExpiry.map { Date() < $0 } ?? false)
-    }
-
     private init() {}
 
-    // MARK: - Auth
+    // MARK: - Request helper (anon key only)
 
-    /// Idempotent sign-in. Returns immediately if a valid token exists; otherwise
-    /// prefills credentials from CI-injected static constants on first run, then
-    /// posts to /auth/v1/token?grant_type=password.
-    func signInIfNeeded() async {
-        if isAuthenticated { return }
-
-        // First-run prefill — copy CI-baked credentials into UserDefaults if empty
-        if (UserDefaults.standard.string(forKey: "lucidride_email") ?? "").isEmpty {
-            UserDefaults.standard.set(Self.prefilledEmail,    forKey: "lucidride_email")
-            UserDefaults.standard.set(Self.prefilledPassword, forKey: "lucidride_password")
-        }
-
-        guard !email.isEmpty, !password.isEmpty,
-              email != "BUILD_EMAIL", password != "BUILD_PASSWORD" else {
-            log("signInIfNeeded skipped — no credentials baked in")
-            return
-        }
-
-        let url = URL(string: "\(baseURL)/auth/v1/token?grant_type=password")!
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue(anonKey,           forHTTPHeaderField: "apikey")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["email": email, "password": password])
-
-        do {
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-                log("auth failed: \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
-                return
-            }
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            self.accessToken = json?["access_token"] as? String
-            let expiresIn   = (json?["expires_in"] as? Double) ?? 3600
-            self.tokenExpiry = Date().addingTimeInterval(expiresIn - 60) // refresh 1m early
-            log("authenticated until \(tokenExpiry!.formatted())")
-        } catch {
-            log("auth error: \(error)")
-        }
-    }
-
-    func signOut() {
-        accessToken = nil
-        tokenExpiry = nil
-        UserDefaults.standard.removeObject(forKey: "lucidride_email")
-        UserDefaults.standard.removeObject(forKey: "lucidride_password")
-    }
-
-    // MARK: - Request helper
-
-    private func authedRequest(path: String, method: String = "GET", body: Any? = nil, queryItems: [URLQueryItem] = []) async -> URLRequest? {
-        await signInIfNeeded()
-        guard let token = accessToken else { return nil }
-
+    private func anonRequest(path: String,
+                             method: String = "GET",
+                             body: Any? = nil,
+                             queryItems: [URLQueryItem] = []) -> URLRequest? {
         var components = URLComponents(string: "\(baseURL)\(path)")!
         if !queryItems.isEmpty { components.queryItems = queryItems }
         guard let url = components.url else { return nil }
@@ -111,7 +50,7 @@ final class SupabaseClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue(anonKey,            forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(token)",  forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let body {
             req.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -119,9 +58,13 @@ final class SupabaseClient {
         return req
     }
 
+    // MARK: - Auth shims (no-ops — kept for call-site compatibility)
+
+    func signInIfNeeded() async { /* no auth needed — direct anon access */ }
+    func signOut() { /* nothing to sign out of */ }
+
     // MARK: - Activities (motor_racing tagging)
 
-    /// Fetch the most recent N motor_racing activities, newest first.
     func fetchRides(limit: Int = 50) async throws -> [Ride] {
         let queryItems: [URLQueryItem] = [
             URLQueryItem(name: "select", value: "*"),
@@ -130,8 +73,8 @@ final class SupabaseClient {
             URLQueryItem(name: "order",                    value: "started_at.desc"),
             URLQueryItem(name: "limit",                    value: "\(limit)")
         ]
-        guard let req = await authedRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
-            throw NSError(domain: "lucidride", code: 401)
+        guard let req = anonRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
+            throw NSError(domain: "lucidride", code: 400)
         }
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -155,7 +98,7 @@ final class SupabaseClient {
             "source": "tap",
             "metadata": ["app": "LucidRide", "version": BuildInfo.codeVersion, "bike": "RS125"]
         ]
-        guard var req = await authedRequest(path: "/rest/v1/activities", method: "POST", body: body) else {
+        guard var req = anonRequest(path: "/rest/v1/activities", method: "POST", body: body) else {
             return nil
         }
         req.setValue("return=representation", forHTTPHeaderField: "Prefer")
@@ -170,11 +113,10 @@ final class SupabaseClient {
     }
 
     /// End the active ride — sets `ended_at = now()` on the activity row.
-    /// Caller is responsible for refreshing the rides list.
     func endRide(activityId: String) async throws {
         let nowISO = ISO8601DateFormatter.lucid.string(from: Date())
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(activityId)")]
-        guard let req = await authedRequest(
+        guard let req = anonRequest(
             path: "/rest/v1/activities",
             method: "PATCH",
             body: ["ended_at": nowISO],
@@ -196,7 +138,7 @@ final class SupabaseClient {
             URLQueryItem(name: "order",                    value: "started_at.desc"),
             URLQueryItem(name: "limit",                    value: "1")
         ]
-        guard let req = await authedRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
+        guard let req = anonRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
             return nil
         }
         let (data, _) = try await session.data(for: req)
@@ -207,9 +149,6 @@ final class SupabaseClient {
 
     // MARK: - realtime_health (window query)
 
-    /// Fetch HR samples from the realtime_health table within a time window.
-    /// Used to render the post-ride HR profile chart on RideDetailView.
-    /// Columns: `recorded_at` (timestamp), `heart_rate` (int), `hrv_rmssd` (float).
     func fetchHRWindow(start: Date, end: Date) async throws -> [HRSample] {
         let startISO = ISO8601DateFormatter.lucid.string(from: start)
         let endISO   = ISO8601DateFormatter.lucid.string(from: end)
@@ -222,7 +161,7 @@ final class SupabaseClient {
             URLQueryItem(name: "order",        value: "recorded_at.asc"),
             URLQueryItem(name: "limit",        value: "10000")
         ]
-        guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
+        guard let req = anonRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return []
         }
         let (data, _) = try await session.data(for: req)
@@ -231,7 +170,6 @@ final class SupabaseClient {
         return (try? decoder.decode([HRSample].self, from: data)) ?? []
     }
 
-    /// Latest HRV reading from realtime_health — drives the body-state band on TodayView.
     func fetchLatestHRV() async throws -> Double? {
         let queryItems: [URLQueryItem] = [
             URLQueryItem(name: "select",    value: "hrv_rmssd"),
@@ -240,7 +178,7 @@ final class SupabaseClient {
             URLQueryItem(name: "order",     value: "recorded_at.desc"),
             URLQueryItem(name: "limit",     value: "1")
         ]
-        guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
+        guard let req = anonRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return nil
         }
         let (data, _) = try await session.data(for: req)
@@ -248,8 +186,7 @@ final class SupabaseClient {
         return (arr?.first?["hrv_rmssd"] as? Double)
     }
 
-    /// Latest HR reading from realtime_health — used by the live Bike Mode HUD,
-    /// polled every few seconds while the HUD is on screen.
+    /// Latest HR reading from realtime_health — polled every few seconds by HUDState.
     func fetchLatestHR() async throws -> HRSample? {
         let queryItems: [URLQueryItem] = [
             URLQueryItem(name: "select",     value: "recorded_at,heart_rate,hrv_rmssd"),
@@ -258,7 +195,7 @@ final class SupabaseClient {
             URLQueryItem(name: "order",      value: "recorded_at.desc"),
             URLQueryItem(name: "limit",      value: "1")
         ]
-        guard let req = await authedRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
+        guard let req = anonRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return nil
         }
         let (data, _) = try await session.data(for: req)

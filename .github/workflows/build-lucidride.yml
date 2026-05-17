@@ -41,14 +41,11 @@ jobs:
           xcodegen generate
           ls -la LucidRide.xcodeproj || (echo "xcodegen produced no project!" && exit 1)
 
-      - name: Inject auth credentials
-        run: |
-          sed -i '' 's|static let prefilledEmail:    String = "BUILD_EMAIL"|static let prefilledEmail:    String = "${{ secrets.EE_TASKS_EMAIL }}"|' \
-            ios/LucidRide/LucidRide/Services/SupabaseClient.swift
-          sed -i '' 's|static let prefilledPassword: String = "BUILD_PASSWORD"|static let prefilledPassword: String = "${{ secrets.EE_TASKS_PASSWORD }}"|' \
-            ios/LucidRide/LucidRide/Services/SupabaseClient.swift
-          echo "=== prefilled lines after injection ==="
-          grep 'prefilledEmail\|prefilledPassword' ios/LucidRide/LucidRide/Services/SupabaseClient.swift | head -4
+      # NOTE: credential injection REMOVED 2026-05-17.
+      # The app now reads/writes Supabase directly with the public anon key
+      # (scoped server-side RLS policies `lucidride_anon_*`). No email/password
+      # is baked into the binary anymore — this permanently closes the
+      # public-repo credential-leak problem. Do NOT re-add a sed-injection step.
 
       - name: Inject commit SHA + build date into BuildInfo.swift
         run: |

@@ -62,35 +62,19 @@ struct SettingsView: View {
     @ViewBuilder
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("ACCOUNT", icon: "person.circle")
+            sectionLabel("DATA", icon: "externaldrive.connected.to.line.below")
             VStack(alignment: .leading, spacing: 0) {
-                infoRow("Email", value: authedEmail.isEmpty ? "not signed in" : authedEmail)
+                infoRow("Source", value: "Supabase (direct)")
                 Divider().background(DS.Colors.border).padding(.horizontal, 14)
-                infoRow("Status",
-                        value: isAuthed ? "authenticated" : "—",
-                        color: isAuthed ? DS.Colors.success : DS.Colors.textMuted)
+                infoRow("Mode", value: "anon key · scoped", color: DS.Colors.success)
             }
             .background(
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
             )
-
-            if isAuthed {
-                Button {
-                    supabase.signOut()
-                    refresh()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                        Text("Sign out")
-                    }
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(DS.Colors.danger.opacity(0.85)))
-                }
-                .buttonStyle(.plain)
-            }
+            Text("No login needed — reads HR + rides directly via row-scoped policies. No credentials stored in the app.")
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(DS.Colors.textMuted)
+                .padding(.horizontal, 4)
         }
     }
 
