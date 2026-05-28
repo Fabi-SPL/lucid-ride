@@ -15,10 +15,7 @@ import Foundation
 /// the user happens to have the app open when they press the Action Button.
 struct ToggleRideIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Ride"
-    static var description = IntentDescription(
-        "Start a new ride if none is active, otherwise end the current one. " +
-        "Designed for the Action Button — one press, gloves on."
-    )
+    static var description = IntentDescription("Start a new ride, or end the current one. Designed for the Action Button.")
 
     static var openAppWhenRun: Bool = true
 
