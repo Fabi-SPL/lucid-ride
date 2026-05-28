@@ -79,6 +79,21 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .lucidRideAuthChanged)) { _ in
             Task { await refreshActiveRide() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .lucidRideToggledViaIntent)) { note in
+            // Action Button fired ToggleRideIntent. We don't redo the network
+            // work (the intent already did it) — we just sync our local state
+            // with whatever happened.
+            Task { await refreshActiveRide() }
+            if let info = note.userInfo,
+               let action = info["action"] as? String,
+               action == "ended",
+               let id = info["id"] as? String, !id.isEmpty {
+                Task {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    postRideActivityId = id
+                }
+            }
+        }
     }
 
     // MARK: - Part markers (floating arrows + icons)

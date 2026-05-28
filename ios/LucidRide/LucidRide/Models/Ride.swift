@@ -79,9 +79,11 @@ struct RideMetadata: Codable, Equatable {
     let avgSpeedKmh:    Double?
     let elevGainM:      Double?
     let elevLossM:      Double?
-    let maxLeanDeg:     Double?
+    let maxLeanDeg:     Double?          // raw IMU max |roll|
+    let maxLeanDegGps:  Double?          // GPS-derived max lean (atan(v²/rg))
     let maxAccelG:      Double?
     let waypoints:      Int?
+    let pausedSeconds:  Double?
     let zoneSeconds:    [String: Double]?
 
     enum CodingKeys: String, CodingKey {
@@ -96,7 +98,9 @@ struct RideMetadata: Codable, Equatable {
         case elevGainM      = "elev_gain_m"
         case elevLossM      = "elev_loss_m"
         case maxLeanDeg     = "max_lean_deg"
+        case maxLeanDegGps  = "max_lean_deg_gps"
         case maxAccelG      = "max_accel_g"
+        case pausedSeconds  = "paused_seconds"
         case zoneSeconds    = "zone_seconds"
     }
 }

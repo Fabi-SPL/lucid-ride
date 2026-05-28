@@ -22,6 +22,9 @@ struct Waypoint {
     let user_accel_x: Double?
     let user_accel_y: Double?
     let user_accel_z: Double?
+    let lean_deg_gps: Double?    // GPS-derived lean angle (signed: + right, - left)
+    let compass_deg: Double?     // true compass bearing, valid even at standstill
+    let is_paused: Bool          // recorder was in auto-pause state for this tick
 }
 
 /// Aggregates phone-side telemetry during an active ride and persists it.
@@ -71,9 +74,14 @@ final class RideTelemetryRecorder: ObservableObject {
     private var pausedSeconds: TimeInterval = 0
     private var maxLean_rad: Double = 0
     private var maxAccelG: Double = 0
+    private var maxLeanGps_deg: Double = 0
     private var lastLocationForDelta: CLLocation?
     private var lastAltitude_m: Double?
     private var lastSampleAt: Date?
+
+    // GPS-lean state — keeps the last 3 valid bearings for smoothing per
+    // RaceChrono/AiM 3-sample FIR consensus (deep-research 2026-05-28).
+    private var bearingHistory: [(t: Date, bearing: Double, speed_mps: Double)] = []
 
     private let supabase = SupabaseClient.shared
     private let location = LocationService.shared
@@ -192,6 +200,13 @@ final class RideTelemetryRecorder: ObservableObject {
             if motionStats.maxAccelG.isFinite { maxAccelG = max(maxAccelG, motionStats.maxAccelG) }
         }
 
+        // GPS-derived lean angle (RaceChrono/AiM formula: atan(v² / (r·g)) with
+        // 3-sample FIR smoothing and turn radius from consecutive bearings).
+        let leanGpsDeg: Double? = recordingActive ? gpsLeanAngleDeg(loc: loc, now: now) : nil
+        if let l = leanGpsDeg, l.isFinite {
+            maxLeanGps_deg = max(maxLeanGps_deg, abs(l))
+        }
+
         // Buffer waypoint.
         let speedRaw: Double? = {
             guard let s = loc?.speed, s >= 0 else { return nil }
@@ -220,9 +235,56 @@ final class RideTelemetryRecorder: ObservableObject {
             yaw_rad:      motionStats.avgYaw_rad   ?? motion.yaw_rad,
             user_accel_x: motion.userAccelX,
             user_accel_y: motion.userAccelY,
-            user_accel_z: motion.userAccelZ
+            user_accel_z: motion.userAccelZ,
+            lean_deg_gps: leanGpsDeg,
+            compass_deg:  location.compassHeading,
+            is_paused:    isAutoPaused
         )
         waypointBuffer.append(wp)
+    }
+
+    /// Computes lean angle from GPS using `lean = atan(v² / (r·g))` where
+    /// turn radius r is derived from change in bearing over distance traveled.
+    /// Direction sign comes from the bearing-change cross product (right turn =
+    /// positive, left turn = negative). Returns nil when speed is too low for
+    /// stable lean computation or insufficient bearing history.
+    ///
+    /// Formula consensus per RaceChrono/AiM forums + Hackaday GPS-lean writeup
+    /// (deep-research 2026-05-28).
+    private func gpsLeanAngleDeg(loc: CLLocation?, now: Date) -> Double? {
+        guard let loc, loc.speed > 3.0,           // skip < ~11 km/h
+              loc.course >= 0,                    // course is invalid below ~5 km/h
+              loc.horizontalAccuracy < 20         // skip noisy fixes
+        else { return nil }
+
+        // Maintain a 3-sample FIR window of recent (time, bearing, speed) tuples.
+        bearingHistory.append((t: now, bearing: loc.course, speed_mps: loc.speed))
+        if bearingHistory.count > 3 { bearingHistory.removeFirst(bearingHistory.count - 3) }
+        guard bearingHistory.count == 3 else { return nil }
+
+        let first = bearingHistory[0]
+        let last  = bearingHistory[2]
+        let dt = last.t.timeIntervalSince(first.t)
+        guard dt > 0.5 else { return nil }
+
+        // Bearing delta — wrap to [-180, +180] so a 359→1° crossing is +2°, not -358°.
+        var dB = last.bearing - first.bearing
+        if dB >  180 { dB -= 360 }
+        if dB < -180 { dB += 360 }
+
+        // Yaw rate in rad/s
+        let yawRate = (dB * .pi / 180.0) / dt
+        guard abs(yawRate) > 0.01 else { return 0.0 }   // straight = 0 lean
+
+        // Average speed across the window
+        let v = (first.speed_mps + last.speed_mps + bearingHistory[1].speed_mps) / 3.0
+        guard v > 1.0 else { return nil }
+
+        // Centripetal accel = v * yawRate (signed). Lean = atan(a_c / g).
+        let a_c = v * yawRate
+        let leanRad = atan(a_c / 9.81)
+        let leanDeg = leanRad * 180.0 / .pi
+        return leanDeg.isFinite ? leanDeg : nil
     }
 
     // MARK: - Persistence
@@ -245,17 +307,18 @@ final class RideTelemetryRecorder: ObservableObject {
         let totalWaypoints = flushedCount + waypointBuffer.count
 
         var summary: [String: Any] = [
-            "phone_telemetry": true,
-            "distance_m":      totalDistance_m,
-            "max_speed_kmh":   maxSpeed_mps * 3.6,
-            "avg_speed_kmh":   avgSpeed_mps * 3.6,
-            "elev_gain_m":     elevationGain_m,
-            "elev_loss_m":     elevationLoss_m,
-            "max_lean_deg":    maxLean_rad * 180.0 / Double.pi,
-            "max_accel_g":     maxAccelG,
-            "waypoints":       totalWaypoints,
-            "paused_seconds":  pausedSeconds,
-            "zone_seconds":    zoneSeconds.reduce(into: [String: Double]()) { $0["\($1.key)"] = $1.value }
+            "phone_telemetry":    true,
+            "distance_m":         totalDistance_m,
+            "max_speed_kmh":      maxSpeed_mps * 3.6,
+            "avg_speed_kmh":      avgSpeed_mps * 3.6,
+            "elev_gain_m":        elevationGain_m,
+            "elev_loss_m":        elevationLoss_m,
+            "max_lean_deg":       maxLean_rad * 180.0 / Double.pi,    // raw IMU
+            "max_lean_deg_gps":   maxLeanGps_deg,                      // GPS-derived
+            "max_accel_g":        maxAccelG,
+            "waypoints":          totalWaypoints,
+            "paused_seconds":     pausedSeconds,
+            "zone_seconds":       zoneSeconds.reduce(into: [String: Double]()) { $0["\($1.key)"] = $1.value }
         ]
         // Strip NaN/inf — JSON encoder would fail.
         for (k, v) in summary {

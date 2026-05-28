@@ -253,6 +253,9 @@ final class SupabaseClient {
             if let v = finite(wp.user_accel_x) { dict["user_accel_x"] = v }
             if let v = finite(wp.user_accel_y) { dict["user_accel_y"] = v }
             if let v = finite(wp.user_accel_z) { dict["user_accel_z"] = v }
+            if let v = finite(wp.lean_deg_gps) { dict["lean_deg_gps"] = v }
+            if let v = finite(wp.compass_deg)  { dict["compass_deg"]  = v }
+            dict["is_paused"] = wp.is_paused
             return dict
         }
         guard let req = anonRequest(path: "/rest/v1/ride_telemetry", method: "POST", body: body) else {
