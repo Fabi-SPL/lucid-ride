@@ -223,6 +223,44 @@ final class SupabaseClient {
 
     // MARK: - Ride telemetry persistence
 
+    /// Builds the JSON-ready body for a batch insert. Exposed so
+    /// `TelemetryUploader` can stash a failed batch to disk and retry it
+    /// later via BGProcessingTask without re-encoding from Waypoint structs.
+    func telemetryBatchBody(waypoints: [Waypoint]) -> [[String: Any]]? {
+        guard !waypoints.isEmpty else { return nil }
+        return waypoints.map { wp in
+            return waypointDict(wp)
+        }
+    }
+
+    private func waypointDict(_ wp: Waypoint) -> [String: Any] {
+        var dict: [String: Any] = [
+            "user_id":     wp.userId,
+            "activity_id": wp.activityId,
+            "recorded_at": ISO8601DateFormatter.lucidFractional.string(from: wp.recordedAt)
+        ]
+        if let v = finite(wp.lat)          { dict["lat"]          = v }
+        if let v = finite(wp.lon)          { dict["lon"]          = v }
+        if let v = finite(wp.altitude_m)   { dict["altitude_m"]   = v }
+        if let v = finite(wp.baro_alt_m)   { dict["baro_alt_m"]   = v }
+        if let v = finite(wp.speed_mps)    { dict["speed_mps"]    = v }
+        if let v = finite(wp.course_deg)   { dict["course_deg"]   = v }
+        if let v = finite(wp.h_acc_m)      { dict["h_acc_m"]      = v }
+        if let v = finite(wp.v_acc_m)      { dict["v_acc_m"]      = v }
+        if let v = wp.heart_rate           { dict["heart_rate"]   = v }
+        if let v = wp.zone_index           { dict["zone_index"]   = v }
+        if let v = finite(wp.pitch_rad)    { dict["pitch_rad"]    = v }
+        if let v = finite(wp.roll_rad)     { dict["roll_rad"]     = v }
+        if let v = finite(wp.yaw_rad)      { dict["yaw_rad"]      = v }
+        if let v = finite(wp.user_accel_x) { dict["user_accel_x"] = v }
+        if let v = finite(wp.user_accel_y) { dict["user_accel_y"] = v }
+        if let v = finite(wp.user_accel_z) { dict["user_accel_z"] = v }
+        if let v = finite(wp.lean_deg_gps) { dict["lean_deg_gps"] = v }
+        if let v = finite(wp.compass_deg)  { dict["compass_deg"]  = v }
+        dict["is_paused"] = wp.is_paused
+        return dict
+    }
+
     /// Batch-insert phone-side waypoints into `ride_telemetry`.
     /// Called periodically by `RideTelemetryRecorder` (every 30 s).
     ///
@@ -231,33 +269,7 @@ final class SupabaseClient {
     /// — a single NaN in any field would otherwise nuke the entire batch.
     func insertTelemetryBatch(waypoints: [Waypoint]) async throws {
         guard !waypoints.isEmpty else { return }
-        let body: [[String: Any]] = waypoints.map { wp in
-            var dict: [String: Any] = [
-                "user_id":     wp.userId,
-                "activity_id": wp.activityId,
-                "recorded_at": ISO8601DateFormatter.lucidFractional.string(from: wp.recordedAt)
-            ]
-            if let v = finite(wp.lat)          { dict["lat"]          = v }
-            if let v = finite(wp.lon)          { dict["lon"]          = v }
-            if let v = finite(wp.altitude_m)   { dict["altitude_m"]   = v }
-            if let v = finite(wp.baro_alt_m)   { dict["baro_alt_m"]   = v }
-            if let v = finite(wp.speed_mps)    { dict["speed_mps"]    = v }
-            if let v = finite(wp.course_deg)   { dict["course_deg"]   = v }
-            if let v = finite(wp.h_acc_m)      { dict["h_acc_m"]      = v }
-            if let v = finite(wp.v_acc_m)      { dict["v_acc_m"]      = v }
-            if let v = wp.heart_rate           { dict["heart_rate"]   = v }
-            if let v = wp.zone_index           { dict["zone_index"]   = v }
-            if let v = finite(wp.pitch_rad)    { dict["pitch_rad"]    = v }
-            if let v = finite(wp.roll_rad)     { dict["roll_rad"]     = v }
-            if let v = finite(wp.yaw_rad)      { dict["yaw_rad"]      = v }
-            if let v = finite(wp.user_accel_x) { dict["user_accel_x"] = v }
-            if let v = finite(wp.user_accel_y) { dict["user_accel_y"] = v }
-            if let v = finite(wp.user_accel_z) { dict["user_accel_z"] = v }
-            if let v = finite(wp.lean_deg_gps) { dict["lean_deg_gps"] = v }
-            if let v = finite(wp.compass_deg)  { dict["compass_deg"]  = v }
-            dict["is_paused"] = wp.is_paused
-            return dict
-        }
+        let body = waypoints.map { waypointDict($0) }
         guard let req = anonRequest(path: "/rest/v1/ride_telemetry", method: "POST", body: body) else {
             throw NSError(domain: "lucidride", code: 400)
         }

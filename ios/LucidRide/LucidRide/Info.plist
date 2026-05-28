@@ -70,5 +70,9 @@
 	<string>Lucid Ride reads your heart-rate samples from your Watch to overlay your body state on each ride.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Lucid Ride logs each ride as a workout in the Health app so your motorcycle time counts toward your Activity rings.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.fabi.lucidride.telemetry-flush</string>
+	</array>
 </dict>
 </plist>

@@ -124,6 +124,9 @@ final class RideTelemetryRecorder: ObservableObject {
         await health.finishWorkout(endedAt: Date())
         await flush()
         await writeSummary()
+        // If anything failed to upload, ask iOS to retry in the background
+        // when signal comes back. No-op when nothing's pending.
+        TelemetryUploader.shared.scheduleFlushIfNeeded()
     }
 
     // MARK: - Per-second sampler
@@ -323,8 +326,13 @@ final class RideTelemetryRecorder: ObservableObject {
             try await supabase.insertTelemetryBatch(waypoints: batch)
             flushedCount += batch.count
         } catch {
-            // Best-effort: requeue for next flush.
+            // Best-effort: requeue for next flush AND stash a serialized copy
+            // to disk so the BGProcessingTask can retry even if the app gets
+            // killed mid-ride.
             waypointBuffer.insert(contentsOf: batch, at: 0)
+            if let body = supabase.telemetryBatchBody(waypoints: batch) {
+                TelemetryUploader.shared.stashFailedBatch(body)
+            }
         }
     }
 
