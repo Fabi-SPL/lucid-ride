@@ -128,6 +128,23 @@ final class SupabaseClient {
         }
     }
 
+    /// Fetch a single ride by activity ID — used by PostRideSummarySheet to
+    /// re-read the metadata after finalizeRideTelemetry PATCH lands.
+    func fetchRideById(_ activityId: String) async throws -> Ride? {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "id",      value: "eq.\(activityId)"),
+            URLQueryItem(name: "limit",   value: "1")
+        ]
+        guard let req = anonRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
+            return nil
+        }
+        let (data, _) = try await session.data(for: req)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601withFractional
+        return (try? decoder.decode([Ride].self, from: data))?.first
+    }
+
     /// Returns the active (ended_at IS NULL) motor_racing activity, or nil if none.
     func activeRide() async throws -> Ride? {
         let queryItems: [URLQueryItem] = [

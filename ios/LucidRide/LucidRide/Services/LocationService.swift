@@ -19,6 +19,13 @@ final class LocationService: NSObject, ObservableObject {
     @Published private(set) var baroAltitude: Double?   // meters, anchored to GPS
     @Published private(set) var authorized: Bool = false
 
+    /// True compass bearing in degrees (0-360). Updated via `startUpdatingHeading()`
+    /// — works at standstill, unlike `CLLocation.course` which drops out below ~5 km/h.
+    /// nil until the user moves the phone (compass calibration) or accuracy goes
+    /// negative (interference).
+    @Published private(set) var compassHeading: Double?
+    @Published private(set) var compassAccuracy: Double?
+
     private let manager = CLLocationManager()
     private let altimeter = CMAltimeter()
     private var altimeterStarted = false
@@ -30,6 +37,7 @@ final class LocationService: NSObject, ObservableObject {
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 5
         manager.activityType = .otherNavigation
+        manager.headingFilter = 2.0          // only fire on 2°+ heading change
         manager.pausesLocationUpdatesAutomatically = false
         manager.allowsBackgroundLocationUpdates = false
         manager.showsBackgroundLocationIndicator = false
@@ -43,6 +51,9 @@ final class LocationService: NSObject, ObservableObject {
         case .authorizedAlways, .authorizedWhenInUse:
             authorized = true
             manager.startUpdatingLocation()
+            if CLLocationManager.headingAvailable() {
+                manager.startUpdatingHeading()
+            }
             startAltimeterIfPossible()
         default:
             authorized = false
@@ -51,11 +62,29 @@ final class LocationService: NSObject, ObservableObject {
 
     func stop() {
         manager.stopUpdatingLocation()
+        if CLLocationManager.headingAvailable() {
+            manager.stopUpdatingHeading()
+        }
         if altimeterStarted {
             altimeter.stopRelativeAltitudeUpdates()
             altimeterStarted = false
         }
         baseAltitude_m = nil
+        compassHeading = nil
+        compassAccuracy = nil
+    }
+
+    /// Best-available bearing: compass at standstill / low-speed, GPS course
+    /// at speed. `CLLocation.course` is invalid below ~5 km/h.
+    var displayHeading: Double? {
+        let speed = lastLocation?.speed ?? -1
+        if speed < (5.0 / 3.6) {
+            return compassHeading
+        }
+        if let course = lastLocation?.course, course >= 0 {
+            return course
+        }
+        return compassHeading
     }
 
     private func startAltimeterIfPossible() {
@@ -81,6 +110,9 @@ extension LocationService: CLLocationManagerDelegate {
         authorized = (status == .authorizedAlways || status == .authorizedWhenInUse)
         if authorized {
             manager.startUpdatingLocation()
+            if CLLocationManager.headingAvailable() {
+                manager.startUpdatingHeading()
+            }
             startAltimeterIfPossible()
         }
     }
@@ -88,6 +120,17 @@ extension LocationService: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let last = locations.last else { return }
         lastLocation = last
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        // Negative accuracy = invalid (magnetic interference, uncalibrated).
+        guard newHeading.headingAccuracy >= 0 else {
+            compassHeading = nil
+            compassAccuracy = nil
+            return
+        }
+        compassHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        compassAccuracy = newHeading.headingAccuracy
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

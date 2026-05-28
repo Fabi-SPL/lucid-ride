@@ -146,4 +146,25 @@ final class HUDState: ObservableObject {
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
     }
+
+    // MARK: - Post-ride effort classification
+
+    /// Translates a zone-time distribution into a single semantic effort label
+    /// (WHOOP-style — replaces zone table for ADHD-friendly post-ride read).
+    /// Keys are "0".."3" matching `zoneIndex` buckets, values are seconds.
+    static func effortLabel(from zoneSeconds: [String: Double]) -> (label: String, emoji: String, color: Color) {
+        let total = zoneSeconds.values.reduce(0, +)
+        guard total > 0 else { return ("No data", "—", DS.Colors.textMuted) }
+        let z0 = (zoneSeconds["0"] ?? 0) / total
+        let z1 = (zoneSeconds["1"] ?? 0) / total
+        let z2 = (zoneSeconds["2"] ?? 0) / total
+        let z3 = (zoneSeconds["3"] ?? 0) / total
+
+        // Highest-band first — REDLINE-heavy beats anything else.
+        if z3 > 0.20 { return ("All Out",   "🔥", DS.Colors.danger) }
+        if z2 + z3 > 0.30 { return ("Spirited",  "🟠", DS.Colors.warning) }
+        if z1 > 0.50 { return ("Endurance", "🟡", DS.Colors.success) }
+        if z0 > 0.70 { return ("Recovery",  "🟢", DS.Colors.teal) }
+        return ("Mixed", "🟣", DS.Colors.violet)
+    }
 }

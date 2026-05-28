@@ -58,19 +58,45 @@ struct Ride: Codable, Identifiable, Equatable {
 }
 
 /// Free-form jsonb on `activities.metadata`. LucidRide stamps app + version + bike;
-/// future telemetry fields (lean_max, distance_km, route_id) go here too.
+/// phone-telemetry summary fields (added 2026-05-28) are written by
+/// `RideTelemetryRecorder.writeSummary()` on END RIDE. All fields are optional
+/// so old rides (pre-phone-telemetry) decode cleanly.
 struct RideMetadata: Codable, Equatable {
+    // Identity
     let app:       String?
     let version:   String?
     let bike:      String?
+
+    // Legacy fields (kept for back-compat with pre-phone-telemetry rides)
     let leanMax:   Double?
     let distanceKm: Double?
     let routeId:   String?
 
+    // Phone-telemetry summary (added 2026-05-28)
+    let phoneTelemetry: Bool?
+    let distanceM:      Double?
+    let maxSpeedKmh:    Double?
+    let avgSpeedKmh:    Double?
+    let elevGainM:      Double?
+    let elevLossM:      Double?
+    let maxLeanDeg:     Double?
+    let maxAccelG:      Double?
+    let waypoints:      Int?
+    let zoneSeconds:    [String: Double]?
+
     enum CodingKeys: String, CodingKey {
-        case app, version, bike
-        case leanMax    = "lean_max"
-        case distanceKm = "distance_km"
-        case routeId    = "route_id"
+        case app, version, bike, waypoints
+        case leanMax        = "lean_max"
+        case distanceKm     = "distance_km"
+        case routeId        = "route_id"
+        case phoneTelemetry = "phone_telemetry"
+        case distanceM      = "distance_m"
+        case maxSpeedKmh    = "max_speed_kmh"
+        case avgSpeedKmh    = "avg_speed_kmh"
+        case elevGainM      = "elev_gain_m"
+        case elevLossM      = "elev_loss_m"
+        case maxLeanDeg     = "max_lean_deg"
+        case maxAccelG      = "max_accel_g"
+        case zoneSeconds    = "zone_seconds"
     }
 }

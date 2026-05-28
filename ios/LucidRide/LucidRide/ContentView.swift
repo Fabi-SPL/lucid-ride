@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var startingRide = false
     @State private var partPositions: [BikePart: CGPoint] = [:]
     @State private var recorder: RideTelemetryRecorder?
+    @State private var postRideActivityId: String?
 
     private let supabase = SupabaseClient.shared
 
@@ -66,6 +67,12 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(item: Binding(
+            get: { postRideActivityId.map(IdentifiableString.init) },
+            set: { postRideActivityId = $0?.value }
+        )) { idWrapper in
+            PostRideSummarySheet(activityId: idWrapper.value)
         }
         .onAppear { onEnter() }
         .onDisappear { onExit() }
@@ -316,10 +323,22 @@ struct ContentView: View {
                 recorder = nil
             }
             try await supabase.endRide(activityId: ride.id)
+            let completedId = ride.id
             activeRide = nil
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // Wait a beat for the metadata PATCH (fired in rec.stop) to land
+            // on the server before the sheet refetches.
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            postRideActivityId = completedId
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
+}
+
+/// Thin Identifiable wrapper so `.sheet(item:)` can take a plain String.
+private struct IdentifiableString: Identifiable {
+    let value: String
+    var id: String { value }
+    init(_ v: String) { self.value = v }
 }
