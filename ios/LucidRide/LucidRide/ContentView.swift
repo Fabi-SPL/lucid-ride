@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var startingRide = false
     @State private var voiceTimer: Timer?
     @State private var partPositions: [BikePart: CGPoint] = [:]
+    @State private var recorder: RideTelemetryRecorder?
 
     private let supabase = SupabaseClient.shared
 
@@ -308,6 +309,13 @@ struct ContentView: View {
 
     private func refreshActiveRide() async {
         activeRide = try? await supabase.activeRide()
+        // If the app launched into an in-flight ride (e.g., crash-restart), attach
+        // a fresh recorder from "now" so we at least capture the remainder.
+        if let ride = activeRide, recorder == nil {
+            let rec = RideTelemetryRecorder(activityId: ride.id, userId: supabase.userId, state: state)
+            rec.start()
+            recorder = rec
+        }
     }
 
     private func startRide() async {
@@ -317,6 +325,10 @@ struct ContentView: View {
             if let ride = try await supabase.startRide() {
                 activeRide = ride
                 state.start(activeRide: ride)
+                // Spin up the phone-side recorder (GPS + IMU + HR + zone time).
+                let rec = RideTelemetryRecorder(activityId: ride.id, userId: supabase.userId, state: state)
+                rec.start()
+                recorder = rec
                 if voice.enabled { voice.say("Ride started.") }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
@@ -330,6 +342,13 @@ struct ContentView: View {
         defer { endingRide = false }
         if voice.enabled { voice.say("Ending ride.") }
         do {
+            // Stop the recorder first so the summary is on disk before we close
+            // the activity row. recorder.stop() flushes the buffer + writes the
+            // metadata patch + HR aggregates.
+            if let rec = recorder {
+                await rec.stop()
+                recorder = nil
+            }
             try await supabase.endRide(activityId: ride.id)
             activeRide = nil
             UINotificationFeedbackGenerator().notificationOccurred(.success)

@@ -203,6 +203,91 @@ final class SupabaseClient {
         decoder.dateDecodingStrategy = .iso8601withFractional
         return (try? decoder.decode([HRSample].self, from: data))?.first
     }
+
+    // MARK: - Ride telemetry persistence
+
+    /// Batch-insert phone-side waypoints into `ride_telemetry`.
+    /// Called periodically by `RideTelemetryRecorder` (every 30 s).
+    func insertTelemetryBatch(waypoints: [Waypoint]) async throws {
+        guard !waypoints.isEmpty else { return }
+        let body: [[String: Any]] = waypoints.map { wp in
+            var dict: [String: Any] = [
+                "user_id":     wp.userId,
+                "activity_id": wp.activityId,
+                "recorded_at": ISO8601DateFormatter.lucidFractional.string(from: wp.recordedAt)
+            ]
+            if let v = wp.lat          { dict["lat"]          = v }
+            if let v = wp.lon          { dict["lon"]          = v }
+            if let v = wp.altitude_m   { dict["altitude_m"]   = v }
+            if let v = wp.baro_alt_m   { dict["baro_alt_m"]   = v }
+            if let v = wp.speed_mps    { dict["speed_mps"]    = v }
+            if let v = wp.course_deg   { dict["course_deg"]   = v }
+            if let v = wp.h_acc_m      { dict["h_acc_m"]      = v }
+            if let v = wp.v_acc_m      { dict["v_acc_m"]      = v }
+            if let v = wp.heart_rate   { dict["heart_rate"]   = v }
+            if let v = wp.zone_index   { dict["zone_index"]   = v }
+            if let v = wp.pitch_rad    { dict["pitch_rad"]    = v }
+            if let v = wp.roll_rad     { dict["roll_rad"]     = v }
+            if let v = wp.yaw_rad      { dict["yaw_rad"]      = v }
+            if let v = wp.user_accel_x { dict["user_accel_x"] = v }
+            if let v = wp.user_accel_y { dict["user_accel_y"] = v }
+            if let v = wp.user_accel_z { dict["user_accel_z"] = v }
+            return dict
+        }
+        guard let req = anonRequest(path: "/rest/v1/ride_telemetry", method: "POST", body: body) else {
+            throw NSError(domain: "lucidride", code: 400)
+        }
+        let (_, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            log("insertTelemetryBatch failed: \(http.statusCode)")
+            throw NSError(domain: "lucidride", code: http.statusCode)
+        }
+    }
+
+    /// Patches the active activity row with phone-telemetry summary + HR aggregates.
+    /// Summary lives inside `metadata` JSONB (merged with existing keys) to avoid
+    /// schema migrations; HR aggregates use the existing `hr_avg/hr_peak/hr_min`
+    /// columns.
+    func finalizeRideTelemetry(activityId: String,
+                               summary: [String: Any],
+                               hrAvg: Double?,
+                               hrMax: Double?,
+                               hrMin: Double?) async throws {
+        let existing = (try? await fetchActivityMetadata(activityId: activityId)) ?? [:]
+        var merged: [String: Any] = existing
+        for (k, v) in summary { merged[k] = v }
+
+        var body: [String: Any] = ["metadata": merged]
+        if let v = hrAvg { body["hr_avg"]  = Int(v.rounded()) }
+        if let v = hrMax { body["hr_peak"] = Int(v.rounded()) }
+        if let v = hrMin { body["hr_min"]  = Int(v.rounded()) }
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(activityId)")]
+        guard let req = anonRequest(path: "/rest/v1/activities",
+                                    method: "PATCH",
+                                    body: body,
+                                    queryItems: queryItems) else {
+            throw NSError(domain: "lucidride", code: 400)
+        }
+        let (_, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            log("finalizeRideTelemetry failed: \(http.statusCode)")
+            throw NSError(domain: "lucidride", code: http.statusCode)
+        }
+    }
+
+    private func fetchActivityMetadata(activityId: String) async throws -> [String: Any]? {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select", value: "metadata"),
+            URLQueryItem(name: "id",     value: "eq.\(activityId)")
+        ]
+        guard let req = anonRequest(path: "/rest/v1/activities", queryItems: queryItems) else {
+            return nil
+        }
+        let (data, _) = try await session.data(for: req)
+        let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        return arr?.first?["metadata"] as? [String: Any]
+    }
 }
 
 // MARK: - Date formatter helpers
