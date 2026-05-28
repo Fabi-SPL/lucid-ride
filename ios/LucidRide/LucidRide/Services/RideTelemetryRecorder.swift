@@ -149,13 +149,17 @@ final class RideTelemetryRecorder {
             hrMin = min(hrMin, h)
         }
 
-        // IMU summary extremes.
-        if let r = motion.roll_rad { maxLean_rad = max(maxLean_rad, abs(r)) }
-        let ax = motion.userAccelX ?? 0
-        let ay = motion.userAccelY ?? 0
-        let az = motion.userAccelZ ?? 0
-        let g = (ax * ax + ay * ay + az * az).squareRoot()
-        if g.isFinite { maxAccelG = max(maxAccelG, g) }
+        // IMU summary extremes. Guard NaN/inf — IMU emits non-finite values
+        // during sensor warm-up; max(0, NaN) = NaN, which would poison the summary.
+        if let r = motion.roll_rad, r.isFinite {
+            maxLean_rad = max(maxLean_rad, abs(r))
+        }
+        if let ax = motion.userAccelX, ax.isFinite,
+           let ay = motion.userAccelY, ay.isFinite,
+           let az = motion.userAccelZ, az.isFinite {
+            let g = (ax * ax + ay * ay + az * az).squareRoot()
+            if g.isFinite { maxAccelG = max(maxAccelG, g) }
+        }
 
         // Buffer waypoint.
         let speedRaw: Double? = {
