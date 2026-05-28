@@ -86,16 +86,20 @@ final class RideTelemetryRecorder: ObservableObject {
     private let supabase = SupabaseClient.shared
     private let location = LocationService.shared
     private let motion   = MotionService.shared
+    private let live     = LiveActivityController.shared
+    private let rideStartedAt: Date
 
     init(activityId: String, userId: String, state: HUDState) {
         self.activityId = activityId
         self.userId = userId
         self.state = state
+        self.rideStartedAt = Date()
     }
 
     func start() {
         location.start()
         motion.start()
+        live.start(startedAt: rideStartedAt)
 
         // Sampler — 1 Hz waypoints + accumulator advance.
         sampleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -114,6 +118,7 @@ final class RideTelemetryRecorder: ObservableObject {
         flushTimer?.invalidate(); flushTimer = nil
         location.stop()
         motion.stop()
+        live.end()
         await flush()
         await writeSummary()
     }
@@ -241,6 +246,19 @@ final class RideTelemetryRecorder: ObservableObject {
             is_paused:    isAutoPaused
         )
         waypointBuffer.append(wp)
+
+        // Push to Dynamic Island + Lock Screen (silent no-op if disabled).
+        let elapsed = Int(now.timeIntervalSince(rideStartedAt))
+        let speedKmh = Int(((loc?.speed ?? 0).rounded()) * 3.6)
+        live.update(
+            speedKmh:       max(0, speedKmh),
+            heartRate:      hr.map { Int($0) } ?? 0,
+            zoneIndex:      zone,
+            elapsedSeconds: elapsed,
+            distanceMeters: Int(totalDistance_m),
+            leanDeg:        Int(leanGpsDeg ?? 0),
+            isPaused:       isAutoPaused
+        )
     }
 
     /// Computes lean angle from GPS using `lean = atan(v² / (r·g))` where

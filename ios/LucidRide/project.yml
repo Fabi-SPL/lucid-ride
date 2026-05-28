@@ -33,8 +33,10 @@ targets:
         excludes:
           - "**/*.entitlements"
           - "**/Info.plist"
+      - path: Shared
     dependencies:
       - package: GLTFKit2
+      - target: LucidRideWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.fabi.lucidride
@@ -46,3 +48,24 @@ targets:
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         TARGETED_DEVICE_FAMILY: "1"
+
+  LucidRideWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: LucidRideWidget
+        excludes:
+          - "**/Info.plist"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fabi.lucidride.LucidRideWidget
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: LucidRideWidget/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Lucid Ride Live
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: NO
