@@ -8,7 +8,6 @@ import SwiftUI
 /// for sign-in / version / sign-out.
 struct ContentView: View {
     @StateObject private var state = HUDState()
-    @StateObject private var voice = HUDVoice()
 
     @State private var selectedPart: BikePart?
     @State private var showSettings = false
@@ -16,7 +15,6 @@ struct ContentView: View {
     @State private var hintVisible = true
     @State private var endingRide = false
     @State private var startingRide = false
-    @State private var voiceTimer: Timer?
     @State private var partPositions: [BikePart: CGPoint] = [:]
     @State private var recorder: RideTelemetryRecorder?
 
@@ -122,18 +120,6 @@ struct ContentView: View {
                 .foregroundStyle(HUDState.zoneColor(for: state.liveHR))
 
             Spacer()
-
-            Button {
-                voice.toggle()
-                if voice.enabled { voice.say("Lucid Ride armed.") }
-            } label: {
-                Image(systemName: voice.enabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(voice.enabled ? DS.Colors.violet : DS.Colors.textFaint)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.white.opacity(voice.enabled ? 0.10 : 0.04)))
-            }
-            .buttonStyle(.plain)
 
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape.fill")
@@ -267,7 +253,6 @@ struct ContentView: View {
             await refreshActiveRide()
             state.start(activeRide: activeRide)
         }
-        startVoiceTimer()
         // Auto-fade the tap hint after 6 seconds
         Task {
             try? await Task.sleep(nanoseconds: 6_000_000_000)
@@ -280,29 +265,12 @@ struct ContentView: View {
     private func onExit() {
         UIApplication.shared.isIdleTimerDisabled = false
         state.stop()
-        voice.stop()
-        voiceTimer?.invalidate()
-        voiceTimer = nil
     }
 
     private func forceLandscape() {
         guard let scene = UIApplication.shared.connectedScenes
             .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { _ in }
-    }
-
-    private func startVoiceTimer() {
-        voiceTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { _ in
-            Task { @MainActor in
-                guard voice.enabled else { return }
-                let mins = Int(state.elapsedSeconds) / 60
-                if let hr = state.liveHR {
-                    voice.say("Heart rate \(Int(hr)). \(HUDState.zoneLabel(for: hr).lowercased()) zone. \(mins) minutes elapsed.")
-                } else if activeRide != nil {
-                    voice.say("\(mins) minutes elapsed.")
-                }
-            }
-        }
     }
 
     // MARK: - Ride control
@@ -329,7 +297,6 @@ struct ContentView: View {
                 let rec = RideTelemetryRecorder(activityId: ride.id, userId: supabase.userId, state: state)
                 rec.start()
                 recorder = rec
-                if voice.enabled { voice.say("Ride started.") }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         } catch {
@@ -340,7 +307,6 @@ struct ContentView: View {
     private func endRide(_ ride: Ride) async {
         endingRide = true
         defer { endingRide = false }
-        if voice.enabled { voice.say("Ending ride.") }
         do {
             // Stop the recorder first so the summary is on disk before we close
             // the activity row. recorder.stop() flushes the buffer + writes the

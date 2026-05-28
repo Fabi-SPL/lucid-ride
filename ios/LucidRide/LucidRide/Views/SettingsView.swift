@@ -101,7 +101,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("ABOUT", icon: "info.circle")
-            Text("Lucid Ride is a bike telemetry + biometric pipeline. Phase A: live HR / HRV / body state via the linked health backend, plus placeholder slots on every other bike part. Phase B: RaceBox GPS/IMU, GoPro GPMF, OBD adapter, and voice debrief — wires up as hardware lands.")
+            Text("Lucid Ride is a bike telemetry + biometric pipeline. Phase A: live HR / HRV / body state via the linked health backend, plus phone-side GPS, IMU, distance, and zone-time on every ride. Phase B: RaceBox GPS/IMU, GoPro GPMF, OBD adapter — wires up as hardware lands.")
                 .font(.system(size: 13, weight: .regular, design: .rounded))
                 .foregroundStyle(DS.Colors.textSecondary)
                 .lineLimit(nil)
