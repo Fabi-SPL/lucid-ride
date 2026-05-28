@@ -66,5 +66,9 @@
 	<string>Lucid Ride needs Bluetooth to connect to bike telemetry hardware.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Lucid Ride uses iPhone IMU as a fallback lean-angle source when external telemetry isn't connected.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Lucid Ride reads your heart-rate samples from your Watch to overlay your body state on each ride.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Lucid Ride logs each ride as a workout in the Health app so your motorcycle time counts toward your Activity rings.</string>
 </dict>
 </plist>

@@ -87,6 +87,7 @@ final class RideTelemetryRecorder: ObservableObject {
     private let location = LocationService.shared
     private let motion   = MotionService.shared
     private let live     = LiveActivityController.shared
+    private let health   = HealthKitController.shared
     private let rideStartedAt: Date
 
     init(activityId: String, userId: String, state: HUDState) {
@@ -100,6 +101,7 @@ final class RideTelemetryRecorder: ObservableObject {
         location.start()
         motion.start()
         live.start(startedAt: rideStartedAt)
+        health.startWorkout(startedAt: rideStartedAt)
 
         // Sampler — 1 Hz waypoints + accumulator advance.
         sampleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -119,6 +121,7 @@ final class RideTelemetryRecorder: ObservableObject {
         location.stop()
         motion.stop()
         live.end()
+        await health.finishWorkout(endedAt: Date())
         await flush()
         await writeSummary()
     }
@@ -167,6 +170,11 @@ final class RideTelemetryRecorder: ObservableObject {
             if d > 0.5 && d < 500 { totalDistance_m += d }
         }
         if let cur = loc { lastLocationForDelta = cur }
+
+        // Feed GPS to HealthKit route builder (HK aggregates internally).
+        if recordingActive, let cur = loc, cur.horizontalAccuracy < 30 {
+            health.addLocation(cur)
+        }
 
         // Speed — CL gives -1 when unknown.
         if recordingActive, let s = loc?.speed, s >= 0 {
