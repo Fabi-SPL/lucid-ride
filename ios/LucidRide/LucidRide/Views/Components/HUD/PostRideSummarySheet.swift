@@ -14,6 +14,7 @@ struct PostRideSummarySheet: View {
     @State private var loading = true
     @State private var showZones = false
     @State private var hrSamples: [HRSample] = []
+    @State private var waypoints: [TelemetryRow] = []
 
     private let supabase = SupabaseClient.shared
 
@@ -34,6 +35,7 @@ struct PostRideSummarySheet: View {
                                 .tint(DS.Colors.violet)
                                 .frame(height: 200)
                         } else if let ride {
+                            RideRouteMap(waypoints: waypoints)
                             heroSection(ride: ride)
                             statGrid(ride: ride)
                             zoneDisclosure(ride: ride)
@@ -389,12 +391,14 @@ struct PostRideSummarySheet: View {
         loading = true
         if let r = try? await supabase.fetchRideById(activityId) {
             ride = r
-            // Fetch HR window covering the ride
             let started = r.startedAt
             let ended = r.endedAt ?? Date()
-            if let samples = try? await supabase.fetchHRWindow(start: started, end: ended) {
-                hrSamples = samples
-            }
+            // Parallel fetch — HR samples + waypoints — so the sheet finishes
+            // loading faster on bad cell connections.
+            async let hr   = supabase.fetchHRWindow(start: started, end: ended)
+            async let wp   = supabase.fetchRideTelemetry(activityId: activityId)
+            hrSamples = (try? await hr) ?? []
+            waypoints = (try? await wp) ?? []
         }
         loading = false
     }

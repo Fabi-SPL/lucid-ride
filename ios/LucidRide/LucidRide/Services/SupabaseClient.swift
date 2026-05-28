@@ -320,6 +320,49 @@ final class SupabaseClient {
         let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         return arr?.first?["metadata"] as? [String: Any]
     }
+
+    /// Fetch the waypoints for a completed ride, ordered ascending by time.
+    /// Used by PostRideSummarySheet to render the route map + lean overlay.
+    /// Selects only the fields needed for visualization to keep payload small.
+    func fetchRideTelemetry(activityId: String, limit: Int = 5000) async throws -> [TelemetryRow] {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select",      value: "recorded_at,lat,lon,speed_mps,heart_rate,zone_index,lean_deg_gps,is_paused"),
+            URLQueryItem(name: "activity_id", value: "eq.\(activityId)"),
+            URLQueryItem(name: "lat",         value: "not.is.null"),
+            URLQueryItem(name: "lon",         value: "not.is.null"),
+            URLQueryItem(name: "order",       value: "recorded_at.asc"),
+            URLQueryItem(name: "limit",       value: "\(limit)")
+        ]
+        guard let req = anonRequest(path: "/rest/v1/ride_telemetry", queryItems: queryItems) else {
+            return []
+        }
+        let (data, _) = try await session.data(for: req)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601withFractional
+        return (try? decoder.decode([TelemetryRow].self, from: data)) ?? []
+    }
+}
+
+/// Decode-only projection of a `ride_telemetry` row for post-ride visualization.
+/// The full Waypoint struct in RideTelemetryRecorder is encode-only (snake_case
+/// JSON-dict construction); this is the read-side counterpart with proper Codable.
+struct TelemetryRow: Decodable, Identifiable {
+    let recordedAt: Date
+    let lat: Double?
+    let lon: Double?
+    let speed_mps: Double?
+    let heart_rate: Int?
+    let zone_index: Int?
+    let lean_deg_gps: Double?
+    let is_paused: Bool?
+
+    var id: Date { recordedAt }
+
+    enum CodingKeys: String, CodingKey {
+        case recordedAt = "recorded_at"
+        case lat, lon
+        case speed_mps, heart_rate, zone_index, lean_deg_gps, is_paused
+    }
 }
 
 // MARK: - Date formatter helpers
