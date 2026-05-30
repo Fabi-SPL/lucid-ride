@@ -34,6 +34,14 @@ struct BikeSceneView: UIViewRepresentable {
     var onPartTap: ((BikePart) -> Void)?
     var onPartScreenPositions: (([BikePart: CGPoint]) -> Void)?
 
+    /// User-tunable master brightness (0 = dimmest, 1 = brightest). Drives
+    /// HDR intensity, directional key intensity, and ambient fill together
+    /// so the slider in Settings is a single "how bright" knob. Default 0.5
+    /// is the new baseline after Fabi: "the lighting is horrible, way too
+    /// over lit" — 2026-05-30. Updates live in `updateUIView` as the user
+    /// drags the slider.
+    @AppStorage("lucidride.bikeBrightness") private var bikeBrightness: Double = 0.5
+
     func makeCoordinator() -> Coordinator {
         Coordinator(onPartTap: onPartTap, onPositions: onPartScreenPositions)
     }
@@ -77,6 +85,14 @@ struct BikeSceneView: UIViewRepresentable {
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.onPartTap = onPartTap
         context.coordinator.onPositions = onPartScreenPositions
+
+        // Apply the master brightness slider live. SwiftUI re-runs
+        // updateUIView whenever `bikeBrightness` (an @AppStorage) changes,
+        // so dragging the Settings slider updates the scene in real time.
+        if let scene = view.scene {
+            applyBrightness(bikeBrightness, to: scene)
+        }
+
         guard let bike = view.scene?.rootNode.childNode(withName: "bike", recursively: false) else { return }
         let radians = -leanDegrees * .pi / 180
         let lean = SCNAction.rotateTo(
@@ -84,6 +100,30 @@ struct BikeSceneView: UIViewRepresentable {
         )
         lean.timingMode = .easeOut
         bike.runAction(lean, forKey: "lean")
+    }
+
+    // MARK: - Brightness
+
+    /// Single knob → HDR + directional + ambient intensities. Called from
+    /// `makeScene` (initial state) and `updateUIView` (live drag).
+    ///
+    /// Mapping at default 0.5: HDR 0.9, key 310, ambient 60.
+    ///   Down at 0.0:  HDR 0.4, key 120, ambient 30  (moody, near-dark)
+    ///   Up at 1.0:    HDR 1.4, key 500, ambient 90  (overcast-studio bright)
+    private func applyBrightness(_ b: Double, to scene: SCNScene) {
+        let clamped = max(0.0, min(1.0, b))
+        scene.lightingEnvironment.intensity = CGFloat(0.4 + clamped * 1.0)
+        scene.rootNode.enumerateChildNodes { node, _ in
+            guard let light = node.light else { return }
+            switch light.type {
+            case .directional:
+                light.intensity = CGFloat(120 + clamped * 380)
+            case .ambient:
+                light.intensity = CGFloat(30 + clamped * 60)
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Coordinator
@@ -309,6 +349,11 @@ struct BikeSceneView: UIViewRepresentable {
         // made the entire bottom of the screen feel busy / wrong. The
         // SwiftUI background gradient now shows through cleanly behind the
         // bike instead.
+
+        // Apply the user's brightness slider as the final step so the scene
+        // opens at the right level instead of flashing the hard-coded
+        // initial values for a frame before updateUIView fires.
+        applyBrightness(bikeBrightness, to: scene)
 
         return scene
     }

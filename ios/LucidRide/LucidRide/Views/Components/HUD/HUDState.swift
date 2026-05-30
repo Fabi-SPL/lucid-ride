@@ -64,13 +64,11 @@ final class HUDState: ObservableObject {
                 self.particleTrigger += 1
             }
         }
-        motionTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                let t = Date().timeIntervalSinceReferenceDate
-                self.placeholderLean = sin(t * 0.30) * 28 + sin(t * 0.91) * 6
-            }
-        }
+        // Bike rotation is wired to `placeholderLean`. The old sine-wave demo
+        // (Fabi 2026-05-30: "the bike still sways from left to right which is
+        // really shit") is killed. Stays at 0° until a real IMU/lean source
+        // is piped in here in Phase B.
+
     }
 
     func stop() {

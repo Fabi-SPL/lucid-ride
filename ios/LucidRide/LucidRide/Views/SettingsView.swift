@@ -7,6 +7,11 @@ struct SettingsView: View {
     @State private var authedEmail: String = ""
     @State private var isAuthed = false
 
+    /// Master brightness for the home-screen 3D bike. Read live by
+    /// `BikeSceneView` via the same `@AppStorage` key, so dragging this
+    /// updates the bike in real time behind the settings sheet.
+    @AppStorage("lucidride.bikeBrightness") private var bikeBrightness: Double = 0.5
+
     private let supabase = SupabaseClient.shared
 
     var body: some View {
@@ -20,6 +25,7 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
+                        displaySection
                         accountSection
                         buildSection
                         aboutSection
@@ -56,6 +62,43 @@ struct SettingsView: View {
                     .symbolRenderingMode(.hierarchical)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var displaySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("DISPLAY", icon: "sun.max")
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Bike brightness")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.Colors.textMuted)
+                    Spacer()
+                    Text("\(Int(bikeBrightness * 100))%")
+                        .font(.system(size: 13, weight: .heavy, design: .rounded))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .monospacedDigit()
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DS.Colors.textFaint)
+                    Slider(value: $bikeBrightness, in: 0.0...1.0)
+                        .tint(DS.Colors.violet)
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DS.Colors.textFaint)
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+            )
+            Text("Drag while you can see the bike — it updates live. Drives HDR + key + ambient together as one knob.")
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(DS.Colors.textMuted)
+                .padding(.horizontal, 4)
         }
     }
 
