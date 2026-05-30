@@ -2,38 +2,31 @@ import SwiftUI
 import SceneKit
 import GLTFKit2
 
-/// Clean studio product-showcase scene for the bike.
+/// Quiet studio bike scene — static framing, HDR-driven lighting, no floor.
 ///
-/// Reverted 2026-05-17 from the over-dark "warehouse" experiment (Fabi:
-/// "looks a lot worse / horrible / wonky") back toward the bright, calm
-/// studio look he called "amazing." Three combined techniques:
+/// Rebuilt 2026-05-30 after Fabi: "as soon as I open it it just looks shit ...
+/// the lighting is completely off ... stop moving it from left to right ...
+/// the reflection at the bottom is just too detailed." The previous version
+/// had auto-rotate + cinematic 3-point + bloom/vignette + a reflective floor
+/// all fighting each other. New approach is minimal:
 ///
-/// 1. Bright studio HDR IBL (`studio_small_04_1k.hdr` — Polyhaven CC0) at
-///    intensity 1.5. Even, neutral environment; chrome/carpaint get clean
-///    reflections instead of muddy warehouse murk. The HDR does most of the
-///    shading; directional lights are gentle accents.
-/// 2. Calm 3-point: soft near-neutral key, ~2:1 neutral fill, subtle white
-///    rim. Soft shadows (0.55 alpha, large radius), ambient lift 110 so
-///    blacks read charcoal not crushed. No colour casts, no kicker, no
-///    heavy vignette — a product-shoot look, not a moody stage.
-/// 3. Manual orbit + pinch zoom on top of the auto-rotate. User can grab the
-///    bike and inspect it from any angle; auto-rotate pauses while the user
-///    interacts, resumes after 3 seconds of stillness.
+/// 1. Static 3/4 hero angle. No auto-rotate, ever. User can still pan/pinch
+///    to inspect parts; gestures never trigger any return-to-spin motion.
+/// 2. HDR does almost all the shading (Polyhaven Studio Small 04 CC0 at 1.3).
+///    One soft key directional gives the bike a definite shadow direction;
+///    low ambient lifts the blacks. No fill, no rim, no bloom, no vignette.
+/// 3. No SCNFloor. The SwiftUI gradient behind the scene sweeps through
+///    cleanly — the bike no longer sits on a second copy of itself.
 ///
 /// Pipeline:
 /// - Load bike.glb via GLTFKit2 (PBR materials come through automatically).
-/// - Position-cluster the 28 anonymous meshes into 6 BikePart regions for
+/// - Position-cluster the anonymous meshes into 6 BikePart regions for
 ///   tap-to-data hit testing.
-/// - Light: dark HDR + cinematic 3-point + ambient. The HDR carries indirect
-///   reflection; directionals carry shading direction; ambient lifts the
-///   blackest blacks just enough so the bike isn't lost in shadow.
-/// - Camera: orbit rig auto-rotates. Pan gesture rotates the rig in real
-///   time. Pinch gesture scales `camNode.position.z` to zoom. Auto-rotate
-///   resumes 3 s after the last gesture.
+/// - Camera: static orbit rig. Pan rotates it; pinch scales camNode.z to zoom.
 /// - Every render frame: project each named bike-part node's world position
 ///   to 2-D screen space and surface it via `onPartScreenPositions` so the
-///   ContentView overlay can draw tappable icons / arrows that orbit with
-///   the bike.
+///   ContentView overlay can draw tappable icons / arrows that follow the
+///   bike when the user manually orbits it.
 struct BikeSceneView: UIViewRepresentable {
     let leanDegrees: Double
     let pulseBPM: Double?
@@ -110,10 +103,6 @@ struct BikeSceneView: UIViewRepresentable {
         private var lastProjectionTime: TimeInterval = 0
         private let projectionInterval: TimeInterval = 1.0 / 30.0
 
-        // Manual-orbit state. While true, auto-rotate is suspended.
-        private var userInteracting = false
-        private var resumeWorkItem: DispatchWorkItem?
-
         init(onPartTap: ((BikePart) -> Void)?,
              onPositions: (([BikePart: CGPoint]) -> Void)?) {
             self.onPartTap = onPartTap
@@ -141,9 +130,6 @@ struct BikeSceneView: UIViewRepresentable {
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
             guard let view = scnView, let rig = orbitRig else { return }
             switch gesture.state {
-            case .began:
-                beginInteraction()
-                rig.removeAction(forKey: "autoOrbit")
             case .changed:
                 let t = gesture.translation(in: view)
                 // Horizontal drag → Y rotation; vertical drag → X tilt (clamped).
@@ -154,8 +140,6 @@ struct BikeSceneView: UIViewRepresentable {
                 e.x = clamp(e.x + rotX, min: -0.6, max: 0.05)
                 rig.eulerAngles = e
                 gesture.setTranslation(.zero, in: view)
-            case .ended, .cancelled, .failed:
-                scheduleAutoOrbitResume()
             default: break
             }
         }
@@ -163,8 +147,6 @@ struct BikeSceneView: UIViewRepresentable {
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             guard let cam = camNode else { return }
             switch gesture.state {
-            case .began:
-                beginInteraction()
             case .changed:
                 let factor = Float(1.0 / gesture.scale)
                 let newZ = clamp(cam.position.z * factor,
@@ -172,29 +154,8 @@ struct BikeSceneView: UIViewRepresentable {
                                  max: baseCamDist * 2.4)
                 cam.position.z = newZ
                 gesture.scale = 1.0
-            case .ended, .cancelled, .failed:
-                scheduleAutoOrbitResume()
             default: break
             }
-        }
-
-        private func beginInteraction() {
-            userInteracting = true
-            resumeWorkItem?.cancel()
-            resumeWorkItem = nil
-        }
-
-        private func scheduleAutoOrbitResume() {
-            let work = DispatchWorkItem { [weak self] in
-                guard let self = self, let rig = self.orbitRig else { return }
-                self.userInteracting = false
-                let spin = SCNAction.repeatForever(
-                    SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
-                )
-                rig.runAction(spin, forKey: "autoOrbit")
-            }
-            resumeWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
         }
 
         private func matchPart(node: SCNNode) -> BikePart? {
@@ -256,14 +217,13 @@ struct BikeSceneView: UIViewRepresentable {
         let scene = SCNScene()
         scene.background.contents = nil    // SwiftUI gradient shows through
 
-        // Clean studio HDR — Polyhaven Studio Small 04 CC0. Bright, even,
-        // neutral. This is the config Fabi called "looks amazing" before the
-        // over-dark warehouse experiment. PBR chrome/carpaint get clean
-        // reflections without the muddy warehouse murk.
+        // HDR carries almost all the lighting — Polyhaven Studio Small 04 CC0.
+        // Bright, neutral, evenly lit; chrome and paint get clean reflections
+        // without help from extra directionals.
         if let hdrURL = Bundle.main.url(forResource: "studio_small_04_1k", withExtension: "hdr") {
             scene.lightingEnvironment.contents = hdrURL
         }
-        scene.lightingEnvironment.intensity = 1.5
+        scene.lightingEnvironment.intensity = 1.3
 
         // Bike
         let bike = loadOrBuildBike()
@@ -276,29 +236,28 @@ struct BikeSceneView: UIViewRepresentable {
         let worldMin = SCNVector3(lMin.x * s + bp.x, lMin.y * s + bp.y, lMin.z * s + bp.z)
         let worldMax = SCNVector3(lMax.x * s + bp.x, lMax.y * s + bp.y, lMax.z * s + bp.z)
         let bikeCenterY = (worldMin.y + worldMax.y) / 2
-        let bikeBottomY = worldMin.y
         let longestHorizontal = max(worldMax.x - worldMin.x, worldMax.z - worldMin.z)
 
-        // Camera
+        // Camera — clean exposure, no bloom, no vignette. Lets the PBR
+        // materials look like themselves instead of behind a filter.
         let cam = SCNCamera()
         cam.fieldOfView = 30
         cam.zNear = 0.05
         cam.zFar = 100
         cam.wantsHDR = true
         cam.wantsExposureAdaptation = false
-        cam.exposureOffset = 0.32
-        cam.bloomIntensity = 0.65
-        cam.bloomThreshold = 0.88
-        cam.bloomBlurRadius = 5.0
+        cam.exposureOffset = 0.18
+        cam.bloomIntensity = 0.0
+        cam.bloomThreshold = 1.0
+        cam.bloomBlurRadius = 0.0
         cam.colorFringeIntensity = 0.0
-        cam.contrast = 0.12
-        cam.saturation = 1.04
-        cam.vignettingPower = 0.40
-        cam.vignettingIntensity = 0.22
-        // Eased framing — 1.35 felt cramped/wonky. 1.5 gives the bike room.
+        cam.contrast = 0.08
+        cam.saturation = 1.02
+        cam.vignettingPower = 0.0
+        cam.vignettingIntensity = 0.0
         let camDist = longestHorizontal * 1.5
         cam.focalDistance = CGFloat(camDist)
-        cam.focalBlurRadius = 2.5
+        cam.focalBlurRadius = 0.0
         cam.focalLength = 50
         cam.fStop = 6.0
         coordinator.baseCamDist = camDist
@@ -311,84 +270,45 @@ struct BikeSceneView: UIViewRepresentable {
         let orbitRig = SCNNode()
         orbitRig.name = "orbitRig"
         orbitRig.position = SCNVector3(0, bikeCenterY, 0)
-        orbitRig.eulerAngles = SCNVector3(-0.16, 0.55, 0)  // clean 3/4 hero, less downward tilt
+        orbitRig.eulerAngles = SCNVector3(-0.16, 0.55, 0)  // static 3/4 hero, no motion
         orbitRig.addChildNode(camNode)
         scene.rootNode.addChildNode(orbitRig)
         coordinator.orbitRig = orbitRig
 
-        // Auto-rotate; paused on user gesture, resumes 3s after release.
-        orbitRig.runAction(SCNAction.repeatForever(
-            SCNAction.rotateBy(x: 0, y: 0.18, z: 0, duration: 6)
-        ), forKey: "autoOrbit")
+        // No auto-rotate. Bike sits still until the user grabs it.
 
-        // === Calm studio 3-point ===
-        // The bright HDR (intensity 1.5) does most of the shading now, so
-        // these directionals are gentle accents, not dramatic stage lights.
-        // No heavy colour casts, soft shadows, ~2:1 key:fill — a clean
-        // product-shoot look, not a moody warehouse.
+        // === Soft single key + low ambient ===
+        // HDR does the bulk of the shading; this just gives the bike a
+        // definite shadow direction so it sits on the page properly. Killed
+        // the 3-point + rim + bloom that made the old version look weird.
 
-        // Key: soft, near-neutral, upper-front-right.
         let key = SCNLight()
         key.type = .directional
-        key.intensity = 1050
-        key.color = UIColor(red: 1.00, green: 0.99, blue: 0.97, alpha: 1)
+        key.intensity = 450
+        key.color = UIColor(white: 1.0, alpha: 1)
         key.castsShadow = true
         key.shadowMode = .deferred
-        key.shadowSampleCount = 32
-        key.shadowRadius = 16            // softer contact shadow
+        key.shadowSampleCount = 24
+        key.shadowRadius = 14
         key.shadowMapSize = CGSize(width: 2048, height: 2048)
-        key.shadowColor = UIColor(white: 0.0, alpha: 0.55)  // light, not crushed
+        key.shadowColor = UIColor(white: 0.0, alpha: 0.38)
         let keyNode = SCNNode()
         keyNode.light = key
-        keyNode.eulerAngles = SCNVector3(-0.70, 0.50, 0)
+        keyNode.eulerAngles = SCNVector3(-0.65, 0.45, 0)
         scene.rootNode.addChildNode(keyNode)
 
-        // Fill: neutral, ~2:1 ratio. Just opens the shadow side.
-        let fill = SCNLight()
-        fill.type = .directional
-        fill.intensity = 560
-        fill.color = UIColor(white: 0.96, alpha: 1)
-        let fillNode = SCNNode()
-        fillNode.light = fill
-        fillNode.eulerAngles = SCNVector3(-0.25, -1.15, 0)
-        scene.rootNode.addChildNode(fillNode)
-
-        // Rim: subtle white separation from behind. Not the hot 1800 edge.
-        let rim = SCNLight()
-        rim.type = .directional
-        rim.intensity = 650
-        rim.color = UIColor.white
-        let rimNode = SCNNode()
-        rimNode.light = rim
-        rimNode.eulerAngles = SCNVector3(-0.50, -2.85, 0)
-        scene.rootNode.addChildNode(rimNode)
-
-        // Ambient: clean lift so blacks read as charcoal, not crushed void.
         let amb = SCNLight()
         amb.type = .ambient
-        amb.intensity = 110
-        amb.color = UIColor(white: 0.6, alpha: 1)
+        amb.intensity = 90
+        amb.color = UIColor(white: 0.62, alpha: 1)
         let ambNode = SCNNode()
         ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Subtle seamless floor — faint reflection only, mostly lets the
-        // StudioBackground sweep show through so the bike sits on a clean
-        // cyclorama rather than a hard mirror.
-        let floor = SCNFloor()
-        floor.reflectivity = 0.10
-        floor.reflectionFalloffEnd = 1.8
-        floor.reflectionResolutionScaleFactor = 0.5
-        let fmat = SCNMaterial()
-        fmat.lightingModel = .physicallyBased
-        fmat.diffuse.contents = UIColor.black
-        fmat.metalness.contents = 0.0
-        fmat.roughness.contents = 0.62
-        fmat.transparency = 0.70
-        floor.firstMaterial = fmat
-        let floorNode = SCNNode(geometry: floor)
-        floorNode.position = SCNVector3(0, bikeBottomY - 0.001, 0)
-        scene.rootNode.addChildNode(floorNode)
+        // No SCNFloor. The previous reflective floor was too detailed and
+        // made the entire bottom of the screen feel busy / wrong. The
+        // SwiftUI background gradient now shows through cleanly behind the
+        // bike instead.
 
         return scene
     }
