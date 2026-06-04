@@ -6,9 +6,13 @@ import CoreMotion
 /// ride telemetry recording. Publishes the latest fix so
 /// `RideTelemetryRecorder` can fold it into per-second waypoints.
 ///
-/// v1 = foreground WhenInUse only. The app already disables the idle timer
-/// during a ride so the screen stays on; that keeps location updates flowing
-/// without needing the Always permission dance. CLLocationManager dispatches
+/// Background-capable WhenInUse: we enable `allowsBackgroundLocationUpdates`
+/// + the blue background indicator, so location keeps flowing (and the 1 Hz
+/// recorder timers keep firing) even when the screen locks, music takes over,
+/// or the phone goes in a pocket. Without this the app suspended mid-ride and
+/// logged ZERO waypoints (Fabi, 2026-06-04). No "Always" permission needed —
+/// "While Using" + background updates + visible indicator is enough for a
+/// session that starts in the foreground. CLLocationManager dispatches
 /// delegate callbacks on the queue that created it — we instantiate on main
 /// so all delegate updates land on main.
 final class LocationService: NSObject, ObservableObject {
@@ -39,8 +43,8 @@ final class LocationService: NSObject, ObservableObject {
         manager.activityType = .otherNavigation
         manager.headingFilter = 2.0          // only fire on 2°+ heading change
         manager.pausesLocationUpdatesAutomatically = false
-        manager.allowsBackgroundLocationUpdates = false
-        manager.showsBackgroundLocationIndicator = false
+        manager.allowsBackgroundLocationUpdates = true   // keep recording when locked / music / pocket
+        manager.showsBackgroundLocationIndicator = true  // honest blue pill while a ride records
     }
 
     func start() {
