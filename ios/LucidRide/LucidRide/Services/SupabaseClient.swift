@@ -21,7 +21,15 @@ final class SupabaseClient {
     let anonKey = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3NDEyOTQ4MDAsICJleHAiOiA5OTk5OTk5OTk5fQ.y3KAL0j_RC9hlzrNVkgZXPxifyRZX3cF_d7-iuE4kA8"
     let userId  = "372210e5-1dda-41b3-b759-5ff72293b8ff"
 
-    private let session = URLSession.shared
+    // Fail-fast session: 15 s request timeout + no connectivity-waiting, so an
+    // offline flush / PATCH errors quickly instead of hanging the ride teardown.
+    private let session: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 30
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg)
+    }()
 
     var onLog: ((String) -> Void)?
 

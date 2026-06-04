@@ -77,6 +77,12 @@ final class HealthKitController {
     }
 
     /// Finalize the workout, save the route, persist to HealthKit.
+    ///
+    /// Hard-bounded to 8 s: HealthKit's finish calls can stall (pending
+    /// permission, busy store), and this used to run inline on the END path
+    /// and freeze the ride teardown. We now stop awaiting after the timeout
+    /// and let the (uncancellable) HK work finish on its own; the ride is
+    /// already safe in Supabase either way.
     func finishWorkout(endedAt: Date) async {
         guard let b = builder else { return }
         defer {
@@ -84,14 +90,31 @@ final class HealthKitController {
             self.routeBuilder = nil
             self.ridePending = false
         }
-        do {
-            try await b.endCollection(at: endedAt)
-            let workout = try await b.finishWorkout()
-            if let workout, let rb = routeBuilder {
-                try? await rb.finishRoute(with: workout, metadata: nil)
+        let rb = routeBuilder
+        await withTimeout(8) {
+            do {
+                try await b.endCollection(at: endedAt)
+                let workout = try await b.finishWorkout()
+                if let workout, let rb {
+                    try? await rb.finishRoute(with: workout, metadata: nil)
+                }
+            } catch {
+                // Best-effort. The ride is still safely recorded in Supabase.
             }
-        } catch {
-            // Best-effort. The ride is still safely recorded in Supabase.
+        }
+    }
+
+    /// Runs `op`, but stops awaiting after `seconds`. The underlying HealthKit
+    /// work isn't cancellable, so it may complete in the background — we just
+    /// don't block the caller on it.
+    private func withTimeout(_ seconds: Double, _ op: @escaping @Sendable () async -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await op() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            }
+            _ = await group.next()   // return as soon as EITHER finishes
+            group.cancelAll()
         }
     }
 }

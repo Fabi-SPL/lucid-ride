@@ -350,26 +350,26 @@ struct ContentView: View {
     }
 
     private func endRide(_ ride: Ride) async {
-        endingRide = true
-        defer { endingRide = false }
-        do {
-            // Stop the recorder first so the summary is on disk before we close
-            // the activity row. recorder.stop() flushes the buffer + writes the
-            // metadata patch + HR aggregates.
-            if let rec = recorder {
-                await rec.stop()
-                recorder = nil
-            }
-            try await supabase.endRide(activityId: ride.id)
-            let completedId = ride.id
-            activeRide = nil
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            // Wait a beat for the metadata PATCH (fired in rec.stop) to land
-            // on the server before the sheet refetches.
-            try? await Task.sleep(nanoseconds: 600_000_000)
+        // Optimistic end — clear the UI IMMEDIATELY so the screen can never
+        // freeze on "ENDING…" no matter how slow/offline the network or
+        // HealthKit is. Teardown runs in the background; the recorder stashes
+        // any failed batch to disk and the BGProcessingTask retries it later.
+        let rec = recorder
+        let completedId = ride.id
+        recorder = nil
+        activeRide = nil
+        endingRide = false
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+        // Flush + summary + HealthKit finish + ended_at PATCH, off the UI path.
+        Task {
+            await rec?.stop()
+            try? await supabase.endRide(activityId: completedId)
+        }
+        // Pop the post-ride sheet shortly after.
+        Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
             postRideActivityId = completedId
-        } catch {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
 }
