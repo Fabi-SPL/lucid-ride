@@ -30,6 +30,7 @@ final class HUDState: ObservableObject {
     @Published var livePeakG: Double = 0                 // peak ||userAccel|| this ride
     @Published var liveElevGainM: Double = 0
     @Published var liveIsPaused: Bool = false
+    @Published var liveDebug: String = ""   // recorder heartbeat: buf/sent/last-flush — on-device truth
 
     private(set) var lastZone: Int = -1
     private(set) var rideStartedAt: Date?

@@ -29,6 +29,12 @@ struct RideActiveHUD: View {
             heroRow
             Spacer(minLength: 0)
             statStrip
+            if !state.liveDebug.isEmpty {
+                Text(state.liveDebug)
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(DS.Colors.textFaint)
+                    .padding(.top, 4)
+            }
         }
         .padding(.horizontal, 26)
         .padding(.top, 12)

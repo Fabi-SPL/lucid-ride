@@ -58,6 +58,8 @@ final class RideTelemetryRecorder: ObservableObject {
     private var flushTimer: Timer?
     private var waypointBuffer: [Waypoint] = []
     private var flushedCount: Int = 0
+    private var lastFlushNote: String = "no flush yet"
+    private var sampleCount: Int = 0
 
     // Accumulators
     private var totalDistance_m: Double = 0
@@ -108,10 +110,22 @@ final class RideTelemetryRecorder: ObservableObject {
             Task { @MainActor in self?.sample() }
         }
 
-        // Flusher — batch upload every 30s.
-        flushTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        // Flusher — batch upload every 10s (was 30s; short test rides never
+        // reached the first flush otherwise).
+        flushTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.flush() }
         }
+    }
+
+    /// Recorder heartbeat for the on-device debug line. Tells us, with zero
+    /// dependence on the network, whether sampling + flushing are actually
+    /// happening: `buf` grows = sampler runs; `sent` grows = inserts land;
+    /// `ERR <n>` = the insert is failing with that code (negative = URLError).
+    private func pushDebug() {
+        let v = Int((state?.liveSpeedKmh ?? 0).rounded())
+        let l = Int((state?.liveLeanDeg ?? 0).rounded())
+        let gps = lastLocationForDelta != nil ? "fix" : "noGPS"
+        state?.liveDebug = "buf \(waypointBuffer.count)·sent \(flushedCount)·v\(v)·L\(l)·\(gps)·\(lastFlushNote)"
     }
 
     /// Stop sampling, flush remaining waypoints, write summary onto the activity.
@@ -282,6 +296,13 @@ final class RideTelemetryRecorder: ObservableObject {
             st.liveElevGainM  = elevationGain_m
             st.liveIsPaused   = isAutoPaused
         }
+
+        // First-5-samples kick: flush early so even a 15 s test ride proves the
+        // write path instead of waiting for the 10 s timer to line up.
+        sampleCount += 1
+        if sampleCount == 5 { Task { @MainActor in await self.flush() } }
+
+        pushDebug()
     }
 
     /// Computes lean angle from GPS using `lean = atan(v² / (r·g))` where
@@ -337,6 +358,7 @@ final class RideTelemetryRecorder: ObservableObject {
         do {
             try await supabase.insertTelemetryBatch(waypoints: batch)
             flushedCount += batch.count
+            lastFlushNote = "ok +\(batch.count)"
         } catch {
             // Best-effort: requeue for next flush AND stash a serialized copy
             // to disk so the BGProcessingTask can retry even if the app gets
@@ -345,7 +367,10 @@ final class RideTelemetryRecorder: ObservableObject {
             if let body = supabase.telemetryBatchBody(waypoints: batch) {
                 TelemetryUploader.shared.stashFailedBatch(body)
             }
+            let ns = error as NSError
+            lastFlushNote = "ERR \(ns.code) \(ns.domain.replacingOccurrences(of: "NSURLErrorDomain", with: "net"))"
         }
+        pushDebug()
     }
 
     private func writeSummary() async {
