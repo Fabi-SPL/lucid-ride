@@ -270,6 +270,18 @@ final class RideTelemetryRecorder: ObservableObject {
             leanDeg:        Int(leanGpsDeg ?? 0),
             isPaused:       isAutoPaused
         )
+
+        // Mirror the live values into HUDState so the in-ride HUD renders them.
+        // (HR + elapsed are already maintained by HUDState's own pollers.)
+        if let st = state {
+            st.liveSpeedKmh   = Double(max(0, speedKmh))
+            st.liveLeanDeg    = leanGpsDeg ?? 0
+            st.liveDistanceM  = totalDistance_m
+            st.liveMaxLeanDeg = maxLeanGps_deg
+            st.livePeakG      = maxAccelG
+            st.liveElevGainM  = elevationGain_m
+            st.liveIsPaused   = isAutoPaused
+        }
     }
 
     /// Computes lean angle from GPS using `lean = atan(v² / (r·g))` where

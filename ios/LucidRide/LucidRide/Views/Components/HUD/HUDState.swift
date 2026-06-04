@@ -21,6 +21,16 @@ final class HUDState: ObservableObject {
     @Published var particleTrigger: Int = 0              // bumps on zone change
     @Published var lastSampleAge: TimeInterval = .infinity  // seconds since latest realtime_health row
 
+    // Live in-ride values — written every second by RideTelemetryRecorder.sample()
+    // and read by RideActiveHUD. All zero before/after a ride.
+    @Published var liveSpeedKmh: Double = 0
+    @Published var liveLeanDeg: Double = 0               // signed GPS lean (+ right, - left)
+    @Published var liveDistanceM: Double = 0
+    @Published var liveMaxLeanDeg: Double = 0            // peak |GPS lean| this ride
+    @Published var livePeakG: Double = 0                 // peak ||userAccel|| this ride
+    @Published var liveElevGainM: Double = 0
+    @Published var liveIsPaused: Bool = false
+
     private(set) var lastZone: Int = -1
     private(set) var rideStartedAt: Date?
 

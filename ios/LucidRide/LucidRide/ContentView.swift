@@ -26,39 +26,22 @@ struct ContentView: View {
             StudioBackground()
                 .ignoresSafeArea()
 
-            BikeSceneView(
-                leanDegrees: state.placeholderLean,
-                pulseBPM: state.liveHR,
-                accentColor: HUDState.zoneColor(for: state.liveHR),
-                onPartTap: { part in
-                    hintVisible = false
-                    selectedPart = part
-                },
-                onPartScreenPositions: { positions in
-                    partPositions = positions
-                }
-            )
-            .ignoresSafeArea()
-
-            // Floating part markers — small glass pills with an icon + chevron
-            // anchored to each bike-part's projected screen position. They orbit
-            // with the bike (driven by SCN render-loop projection) so the user
-            // always sees what's tappable.
-            partMarkersLayer
-                .allowsHitTesting(false)
-
-            ParticleBurst(
-                trigger: state.particleTrigger,
-                color: HUDState.zoneColor(for: state.liveHR)
-            )
-            .allowsHitTesting(false)
-
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                bottomStack
+            if let ride = activeRide {
+                // Active ride → glanceable telemetry HUD (no 3D bike: saves
+                // battery and is far more readable in a mount).
+                RideActiveHUD(
+                    state: state,
+                    ending: endingRide,
+                    onEnd: { Task { await endRide(ride) } },
+                    onSettings: { showSettings = true }
+                )
+                .transition(.opacity)
+            } else {
+                bikeHome
+                    .transition(.opacity)
             }
         }
+        .animation(DS.Anim.standard, value: activeRide?.id)
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -92,6 +75,46 @@ struct ContentView: View {
                     try? await Task.sleep(nanoseconds: 600_000_000)
                     postRideActivityId = id
                 }
+            }
+        }
+    }
+
+    // MARK: - Bike home (idle / no active ride)
+
+    @ViewBuilder
+    private var bikeHome: some View {
+        ZStack {
+            BikeSceneView(
+                leanDegrees: state.placeholderLean,
+                pulseBPM: state.liveHR,
+                accentColor: HUDState.zoneColor(for: state.liveHR),
+                onPartTap: { part in
+                    hintVisible = false
+                    selectedPart = part
+                },
+                onPartScreenPositions: { positions in
+                    partPositions = positions
+                }
+            )
+            .ignoresSafeArea()
+
+            // Floating part markers — small glass pills with an icon + chevron
+            // anchored to each bike-part's projected screen position. They orbit
+            // with the bike (driven by SCN render-loop projection) so the user
+            // always sees what's tappable.
+            partMarkersLayer
+                .allowsHitTesting(false)
+
+            ParticleBurst(
+                trigger: state.particleTrigger,
+                color: HUDState.zoneColor(for: state.liveHR)
+            )
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                topBar
+                Spacer()
+                bottomStack
             }
         }
     }
