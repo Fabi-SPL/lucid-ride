@@ -134,10 +134,12 @@ final class RideTelemetryRecorder: ObservableObject {
         flushTimer?.invalidate(); flushTimer = nil
         location.stop()
         motion.stop()
-        live.end()
-        await health.finishWorkout(endedAt: Date())
+        // Persist data FIRST (remaining waypoints + summary) so a force-quit
+        // during the slower HealthKit finish can't lose hr_avg / distance.
         await flush()
         await writeSummary()
+        live.end()
+        await health.finishWorkout(endedAt: Date())
         // If anything failed to upload, ask iOS to retry in the background
         // when signal comes back. No-op when nothing's pending.
         TelemetryUploader.shared.scheduleFlushIfNeeded()
@@ -155,8 +157,12 @@ final class RideTelemetryRecorder: ObservableObject {
 
         // Auto-pause state machine. Use GPS speed (course is unreliable at low
         // speed). When speed < 1.5 km/h for > 30 s, pause; resume on > 5 km/h.
-        let speedNow_mps: Double = max(0, loc?.speed ?? -1)
         let elapsedTick: TimeInterval = lastSampleAt.map { now.timeIntervalSince($0) } ?? 0
+        // CoreLocation reports speed = -1 at walking pace / sparse fixes, which
+        // zeroed the HUD speed, starved the lean calc, and falsely auto-paused.
+        // Fall back to position-delta speed when Doppler is unavailable.
+        let effSpeed_mps: Double? = effectiveSpeedMps(cur: loc, prev: lastLocationForDelta, dt: elapsedTick)
+        let speedNow_mps: Double = max(0, effSpeed_mps ?? -1)
         if speedNow_mps < Self.pauseSpeedThreshold_mps {
             lowSpeedRunSeconds += elapsedTick
             if !isAutoPaused && lowSpeedRunSeconds > Self.pauseThresholdSeconds {
@@ -193,8 +199,9 @@ final class RideTelemetryRecorder: ObservableObject {
             health.addLocation(cur)
         }
 
-        // Speed — CL gives -1 when unknown.
-        if recordingActive, let s = loc?.speed, s >= 0 {
+        // Speed — effSpeed_mps already falls back to position-delta when CL's
+        // Doppler speed is -1 (walking pace / sparse fixes).
+        if recordingActive, let s = effSpeed_mps, s >= 0 {
             maxSpeed_mps = max(maxSpeed_mps, s)
             speedSum += s
             speedCount += 1
@@ -232,16 +239,13 @@ final class RideTelemetryRecorder: ObservableObject {
 
         // GPS-derived lean angle (RaceChrono/AiM formula: atan(v² / (r·g)) with
         // 3-sample FIR smoothing and turn radius from consecutive bearings).
-        let leanGpsDeg: Double? = recordingActive ? gpsLeanAngleDeg(loc: loc, now: now) : nil
+        let leanGpsDeg: Double? = recordingActive ? gpsLeanAngleDeg(loc: loc, speedMps: speedNow_mps, now: now) : nil
         if let l = leanGpsDeg, l.isFinite {
             maxLeanGps_deg = max(maxLeanGps_deg, abs(l))
         }
 
         // Buffer waypoint.
-        let speedRaw: Double? = {
-            guard let s = loc?.speed, s >= 0 else { return nil }
-            return s
-        }()
+        let speedRaw: Double? = effSpeed_mps.flatMap { $0 >= 0 ? $0 : nil }
         let courseRaw: Double? = {
             guard let c = loc?.course, c >= 0 else { return nil }
             return c
@@ -274,7 +278,7 @@ final class RideTelemetryRecorder: ObservableObject {
 
         // Push to Dynamic Island + Lock Screen (silent no-op if disabled).
         let elapsed = Int(now.timeIntervalSince(rideStartedAt))
-        let speedKmh = Int(((loc?.speed ?? 0).rounded()) * 3.6)
+        let speedKmh = Int(((effSpeed_mps ?? 0).rounded()) * 3.6)
         live.update(
             speedKmh:       max(0, speedKmh),
             heartRate:      hr.map { Int($0) } ?? 0,
@@ -313,14 +317,26 @@ final class RideTelemetryRecorder: ObservableObject {
     ///
     /// Formula consensus per RaceChrono/AiM forums + Hackaday GPS-lean writeup
     /// (deep-research 2026-05-28).
-    private func gpsLeanAngleDeg(loc: CLLocation?, now: Date) -> Double? {
-        guard let loc, loc.speed > 3.0,           // skip < ~11 km/h
+    /// Effective speed (m/s): CoreLocation's Doppler speed when valid (>= 0),
+    /// else derived from the position delta since the last fix. CL emits -1 at
+    /// walking pace / with sparse fixes, which previously zeroed the HUD and
+    /// false-tripped auto-pause.
+    private func effectiveSpeedMps(cur: CLLocation?, prev: CLLocation?, dt: TimeInterval) -> Double? {
+        if let s = cur?.speed, s >= 0 { return s }
+        guard let cur, let prev, dt > 0.2 else { return nil }
+        let d = cur.distance(from: prev)
+        guard d > 0.3, d < 500 else { return nil }   // ignore GPS jitter + teleports
+        return d / dt
+    }
+
+    private func gpsLeanAngleDeg(loc: CLLocation?, speedMps: Double, now: Date) -> Double? {
+        guard let loc, speedMps > 3.0,            // skip < ~11 km/h
               loc.course >= 0,                    // course is invalid below ~5 km/h
               loc.horizontalAccuracy < 20         // skip noisy fixes
         else { return nil }
 
         // Maintain a 3-sample FIR window of recent (time, bearing, speed) tuples.
-        bearingHistory.append((t: now, bearing: loc.course, speed_mps: loc.speed))
+        bearingHistory.append((t: now, bearing: loc.course, speed_mps: speedMps))
         if bearingHistory.count > 3 { bearingHistory.removeFirst(bearingHistory.count - 3) }
         guard bearingHistory.count == 3 else { return nil }
 

@@ -38,8 +38,8 @@ final class LocationService: NSObject, ObservableObject {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 5
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter = kCLDistanceFilterNone   // continuous 1 Hz fixes → reliable Doppler speed
         manager.activityType = .otherNavigation
         manager.headingFilter = 2.0          // only fire on 2°+ heading change
         manager.pausesLocationUpdatesAutomatically = false

@@ -153,13 +153,22 @@ final class SupabaseClient {
         return (try? decoder.decode([Ride].self, from: data))?.first
     }
 
-    /// Returns the active (ended_at IS NULL) motor_racing activity, or nil if none.
+    /// Returns the active (ended_at IS NULL) ride STARTED BY THIS APP, or nil.
+    ///
+    /// Critically filters `source=eq.tap`: the shared `activities` table also
+    /// holds Lucid's auto-detected motor_racing rows (75+ of them vs the user's
+    /// handful of taps). Without this filter the app resurrected an auto-detected
+    /// ride as "active" on every launch and could never be ended. Also ignores
+    /// anything older than 8 h so a stale un-ended ride can't zombie back.
     func activeRide() async throws -> Ride? {
+        let cutoff = ISO8601DateFormatter.lucid.string(from: Date().addingTimeInterval(-8 * 3600))
         let queryItems: [URLQueryItem] = [
             URLQueryItem(name: "select", value: "*"),
             URLQueryItem(name: "user_id",                  value: "eq.\(userId)"),
             URLQueryItem(name: "canonical_activity_type",  value: "eq.motor_racing"),
+            URLQueryItem(name: "source",                   value: "eq.tap"),
             URLQueryItem(name: "ended_at",                 value: "is.null"),
+            URLQueryItem(name: "started_at",               value: "gte.\(cutoff)"),
             URLQueryItem(name: "order",                    value: "started_at.desc"),
             URLQueryItem(name: "limit",                    value: "1")
         ]

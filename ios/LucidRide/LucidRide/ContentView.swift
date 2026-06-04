@@ -361,10 +361,12 @@ struct ContentView: View {
         endingRide = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
 
-        // Flush + summary + HealthKit finish + ended_at PATCH, off the UI path.
+        // Mark ended FIRST (tiny, fast PATCH) so a force-quit during the slower
+        // flush/summary/HealthKit teardown can't leave the ride stuck "active".
+        // Then do the heavier teardown.
         Task {
-            await rec?.stop()
             try? await supabase.endRide(activityId: completedId)
+            await rec?.stop()
         }
         // Pop the post-ride sheet shortly after.
         Task {
