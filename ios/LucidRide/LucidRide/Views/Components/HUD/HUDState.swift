@@ -31,6 +31,7 @@ final class HUDState: ObservableObject {
     @Published var liveElevGainM: Double = 0
     @Published var liveIsPaused: Bool = false
     @Published var liveDebug: String = ""   // recorder heartbeat: buf/sent/last-flush — on-device truth
+    @Published var leanZeroRequested: Bool = false   // tap-to-zero the lean gauge; recorder consumes it
 
     private(set) var lastZone: Int = -1
     private(set) var rideStartedAt: Date?

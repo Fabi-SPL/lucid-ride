@@ -227,10 +227,21 @@ struct RideActiveHUD: View {
                     .tracking(1.2)
                     .foregroundStyle(DS.Colors.textMuted)
             }
-            Text("LEAN")
-                .font(.system(size: 9, weight: .heavy, design: .rounded))
-                .tracking(2.0)
-                .foregroundStyle(DS.Colors.textFaint)
+            VStack(spacing: 2) {
+                Text("LEAN")
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .tracking(2.0)
+                    .foregroundStyle(DS.Colors.textFaint)
+                Text("TAP TO ZERO")
+                    .font(.system(size: 7, weight: .bold, design: .rounded))
+                    .tracking(0.8)
+                    .foregroundStyle(DS.Colors.violet.opacity(0.75))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            state.leanZeroRequested = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
     }
 

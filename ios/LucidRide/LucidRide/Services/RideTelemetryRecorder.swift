@@ -240,16 +240,27 @@ final class RideTelemetryRecorder: ObservableObject {
             maxLeanGps_deg = max(maxLeanGps_deg, abs(l))
         }
 
+        // Recalibrate-on-demand: re-zero lean to the current resting position.
+        // Fabi taps "zero" with the bike upright in its fixed mount (flat on the
+        // tank). Clears the baseline so the next sample re-captures it.
+        if state?.leanZeroRequested == true {
+            leanBaselineDeg = nil
+            maxImuLean_deg = 0
+            state?.leanZeroRequested = false
+        }
+
         // IMU lean from the gravity vector — the REAL bike body angle (vs GPS
-        // lean which only sees path curvature). Requires a rigid mount with the
-        // screen facing the rider; baseline is captured at the first sample so
-        // START while upright. Mount-orientation-agnostic: it measures gravity's
-        // rotation within the screen plane, so portrait or landscape both work.
+        // lean which only sees path curvature). MOUNT-AGNOSTIC: works whether
+        // the phone lies FLAT on the tank or stands UPRIGHT on a stand, as long
+        // as its long edge runs along the bike. Lean = how far gravity tips
+        // toward the device's lateral (x) axis, out of the forward+up (y-z)
+        // plane: atan2(gx, hypot(gy, gz)). Baseline captured at the first sample
+        // (or on recalibrate) assumes the bike is upright at that moment.
         var imuLeanDeg: Double? = nil
-        if let gx = motion.gravityX, let gy = motion.gravityY, (gx * gx + gy * gy) > 0.04 {
-            let raw = atan2(gx, gy) * 180.0 / Double.pi
+        if let gx = motion.gravityX, let gy = motion.gravityY, let gz = motion.gravityZ {
+            let raw = atan2(gx, (gy * gy + gz * gz).squareRoot()) * 180.0 / Double.pi
             if leanBaselineDeg == nil { leanBaselineDeg = raw }
-            var l = (leanBaselineDeg ?? raw) - raw   // + right, - left (matches GPS lean sign)
+            var l = raw - (leanBaselineDeg ?? raw)
             if l > 180 { l -= 360 }
             if l < -180 { l += 360 }
             if l.isFinite {
