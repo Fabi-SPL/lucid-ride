@@ -23,6 +23,13 @@ final class MotionService: ObservableObject {
     @Published private(set) var userAccelY: Double?
     @Published private(set) var userAccelZ: Double?
 
+    /// Gravity direction in device frame (each component in G). Drift-free
+    /// (unlike attitude yaw), so it's the right basis for bike lean angle on a
+    /// rigidly-mounted phone.
+    @Published private(set) var gravityX: Double?
+    @Published private(set) var gravityY: Double?
+    @Published private(set) var gravityZ: Double?
+
     private let manager = CMMotionManager()
 
     // Rolling per-second peaks (reset by consumeRollingStats()).
@@ -58,6 +65,9 @@ final class MotionService: ObservableObject {
             self.userAccelX = ax
             self.userAccelY = ay
             self.userAccelZ = az
+            self.gravityX   = motion.gravity.x
+            self.gravityY   = motion.gravity.y
+            self.gravityZ   = motion.gravity.z
 
             // Accumulate rolling stats. Guard NaN/inf — IMU emits them during
             // sensor warm-up; max(0, NaN) = NaN would otherwise poison.
@@ -80,6 +90,7 @@ final class MotionService: ObservableObject {
         if manager.isDeviceMotionActive { manager.stopDeviceMotionUpdates() }
         pitch_rad = nil; roll_rad = nil; yaw_rad = nil
         userAccelX = nil; userAccelY = nil; userAccelZ = nil
+        gravityX = nil; gravityY = nil; gravityZ = nil
         statsLock.lock()
         resetRollingStatsLocked()
         statsLock.unlock()

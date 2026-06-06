@@ -87,7 +87,7 @@ struct PostRideSummarySheet: View {
     private func heroSection(ride: Ride) -> some View {
         let zs = ride.metadata?.zoneSeconds ?? [:]
         let effort = HUDState.effortLabel(from: zs)
-        let dist_km = (ride.metadata?.distanceM ?? 0) / 1000.0
+        let dist_km = distanceKm
 
         HStack(alignment: .center, spacing: 24) {
             VStack(alignment: .leading, spacing: 0) {
@@ -136,9 +136,9 @@ struct PostRideSummarySheet: View {
         let cols = [GridItem(.flexible(), spacing: 1), GridItem(.flexible(), spacing: 1)]
         let m = ride.metadata
         let dur = ride.durationLabel
-        let topSpd = m?.maxSpeedKmh.map { String(format: "%.0f", $0) } ?? "—"
+        let topSpd = topSpeedKmh > 1 ? String(format: "%.0f", topSpeedKmh) : "—"
         let elev = m?.elevGainM.map { String(format: "%.0f", $0) } ?? "—"
-        let avgHR = ride.hrAvg.map { String(format: "%.0f", $0) } ?? "—"
+        let avgHR = avgHRValue.map { String(format: "%.0f", $0) } ?? "—"
 
         LazyVGrid(columns: cols, spacing: 1) {
             statCell(value: dur,        unit: "Duration",   icon: "clock.fill",            tint: DS.Colors.textPrimary)
@@ -383,6 +383,45 @@ struct PostRideSummarySheet: View {
                 .foregroundStyle(DS.Colors.textMuted)
         }
         .frame(height: 200)
+    }
+
+    // MARK: - Waypoint-derived fallbacks
+    //
+    // The recorder's metadata summary can be empty/zeroed (e.g. a ride that was
+    // ended twice wrote a blank summary over the real data). The waypoints are
+    // the source of truth, so recompute hero stats from them when metadata is
+    // missing.
+
+    private var distanceKm: Double {
+        if let d = ride?.metadata?.distanceM, d > 1 { return d / 1000 }
+        return waypointDistanceM() / 1000
+    }
+    private var topSpeedKmh: Double {
+        if let s = ride?.metadata?.maxSpeedKmh, s > 1 { return s }
+        return (waypoints.compactMap { $0.speed_mps }.max() ?? 0) * 3.6
+    }
+    private var avgHRValue: Double? {
+        if let h = ride?.hrAvg, h > 0 { return h }
+        let hrs = waypoints.compactMap { $0.heart_rate }
+        return hrs.isEmpty ? nil : Double(hrs.reduce(0, +)) / Double(hrs.count)
+    }
+    private func waypointDistanceM() -> Double {
+        guard waypoints.count > 1 else { return 0 }
+        var total = 0.0
+        for i in 1..<waypoints.count {
+            guard let la = waypoints[i-1].lat, let lo = waypoints[i-1].lon,
+                  let lb = waypoints[i].lat,   let lob = waypoints[i].lon else { continue }
+            let d = haversineM(la, lo, lb, lob)
+            if d > 0.5 && d < 500 { total += d }
+        }
+        return total
+    }
+    private func haversineM(_ lat1: Double, _ lon1: Double, _ lat2: Double, _ lon2: Double) -> Double {
+        let R = 6_371_000.0
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLon = (lon2 - lon1) * .pi / 180
+        let a = sin(dLat/2) * sin(dLat/2) + cos(lat1 * .pi/180) * cos(lat2 * .pi/180) * sin(dLon/2) * sin(dLon/2)
+        return R * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 
     // MARK: - Data

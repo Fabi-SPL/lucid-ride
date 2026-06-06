@@ -59,6 +59,11 @@ final class LocationService: NSObject, ObservableObject {
                 manager.startUpdatingHeading()
             }
             startAltimeterIfPossible()
+            // Escalate to Always so a screen-off / pocketed / backgrounded ride
+            // keeps recording. iOS shows the "keep using in background?" prompt.
+            if manager.authorizationStatus == .authorizedWhenInUse {
+                manager.requestAlwaysAuthorization()
+            }
         default:
             authorized = false
         }
@@ -118,6 +123,9 @@ extension LocationService: CLLocationManagerDelegate {
                 manager.startUpdatingHeading()
             }
             startAltimeterIfPossible()
+            if status == .authorizedWhenInUse {
+                manager.requestAlwaysAuthorization()
+            }
         }
     }
 

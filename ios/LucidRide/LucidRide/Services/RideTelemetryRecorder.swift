@@ -77,6 +77,8 @@ final class RideTelemetryRecorder: ObservableObject {
     private var maxLean_rad: Double = 0
     private var maxAccelG: Double = 0
     private var maxLeanGps_deg: Double = 0
+    private var maxImuLean_deg: Double = 0       // calibrated gravity-based lean peak
+    private var leanBaselineDeg: Double? = nil   // gravity angle captured at upright start
     private var lastLocationForDelta: CLLocation?
     private var lastAltitude_m: Double?
     private var lastSampleAt: Date?
@@ -163,15 +165,9 @@ final class RideTelemetryRecorder: ObservableObject {
         // Fall back to position-delta speed when Doppler is unavailable.
         let effSpeed_mps: Double? = effectiveSpeedMps(cur: loc, prev: lastLocationForDelta, dt: elapsedTick)
         let speedNow_mps: Double = max(0, effSpeed_mps ?? -1)
-        if speedNow_mps < Self.pauseSpeedThreshold_mps {
-            lowSpeedRunSeconds += elapsedTick
-            if !isAutoPaused && lowSpeedRunSeconds > Self.pauseThresholdSeconds {
-                isAutoPaused = true
-            }
-        } else if speedNow_mps > Self.resumeSpeedThreshold_mps {
-            lowSpeedRunSeconds = 0
-            if isAutoPaused { isAutoPaused = false }
-        }
+        // Auto-pause REMOVED (Fabi: it false-paused at red lights and was
+        // confusing on the lock screen). Record continuously — stops are part
+        // of the ride. isAutoPaused stays false the whole ride.
 
         // Zone-seconds — advance bucket of the *current* HR zone by tick. If
         // auto-paused, accumulate to `pausedSeconds` instead so the zone bar
@@ -244,6 +240,24 @@ final class RideTelemetryRecorder: ObservableObject {
             maxLeanGps_deg = max(maxLeanGps_deg, abs(l))
         }
 
+        // IMU lean from the gravity vector — the REAL bike body angle (vs GPS
+        // lean which only sees path curvature). Requires a rigid mount with the
+        // screen facing the rider; baseline is captured at the first sample so
+        // START while upright. Mount-orientation-agnostic: it measures gravity's
+        // rotation within the screen plane, so portrait or landscape both work.
+        var imuLeanDeg: Double? = nil
+        if let gx = motion.gravityX, let gy = motion.gravityY, (gx * gx + gy * gy) > 0.04 {
+            let raw = atan2(gx, gy) * 180.0 / Double.pi
+            if leanBaselineDeg == nil { leanBaselineDeg = raw }
+            var l = (leanBaselineDeg ?? raw) - raw   // + right, - left (matches GPS lean sign)
+            if l > 180 { l -= 360 }
+            if l < -180 { l += 360 }
+            if l.isFinite {
+                imuLeanDeg = l
+                maxImuLean_deg = max(maxImuLean_deg, abs(l))
+            }
+        }
+
         // Buffer waypoint.
         let speedRaw: Double? = effSpeed_mps.flatMap { $0 >= 0 ? $0 : nil }
         let courseRaw: Double? = {
@@ -293,7 +307,7 @@ final class RideTelemetryRecorder: ObservableObject {
         // (HR + elapsed are already maintained by HUDState's own pollers.)
         if let st = state {
             st.liveSpeedKmh   = Double(max(0, speedKmh))
-            st.liveLeanDeg    = leanGpsDeg ?? 0
+            st.liveLeanDeg    = imuLeanDeg ?? (leanGpsDeg ?? 0)   // IMU is the real body angle
             st.liveDistanceM  = totalDistance_m
             st.liveMaxLeanDeg = maxLeanGps_deg
             st.livePeakG      = maxAccelG
@@ -400,8 +414,8 @@ final class RideTelemetryRecorder: ObservableObject {
             "avg_speed_kmh":      avgSpeed_mps * 3.6,
             "elev_gain_m":        elevationGain_m,
             "elev_loss_m":        elevationLoss_m,
-            "max_lean_deg":       maxLean_rad * 180.0 / Double.pi,    // raw IMU
-            "max_lean_deg_gps":   maxLeanGps_deg,                      // GPS-derived
+            "max_lean_deg":       maxImuLean_deg,                      // calibrated gravity-based IMU lean
+            "max_lean_deg_gps":   maxLeanGps_deg,                      // GPS path-curvature lean
             "max_accel_g":        maxAccelG,
             "waypoints":          totalWaypoints,
             "paused_seconds":     pausedSeconds,
