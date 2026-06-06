@@ -12,6 +12,13 @@ struct SettingsView: View {
     /// updates the bike in real time behind the settings sheet.
     @AppStorage("lucidride.bikeBrightness") private var bikeBrightness: Double = 0.5
 
+    /// Flip the whole HUD 180° — for when the phone lies flat and iOS can't
+    /// auto-rotate (gravity is on the z-axis), so it reads upside down.
+    @AppStorage("lucidride.flipDashboard") private var flipDashboard = false
+    /// Lean lateral axis. true = phone long-edge ACROSS the bike (landscape on
+    /// the tank); false = long-edge ALONG the bike (portrait).
+    @AppStorage("lucidride.leanLateralY") private var leanLateralY = true
+
     private let supabase = SupabaseClient.shared
 
     var body: some View {
@@ -26,6 +33,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         displaySection
+                        mountSection
                         accountSection
                         buildSection
                         aboutSection
@@ -96,6 +104,41 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
             )
             Text("Drag while you can see the bike — it updates live. Drives HDR + key + ambient together as one knob.")
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(DS.Colors.textMuted)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var mountSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("MOUNT", icon: "iphone.gen3")
+            VStack(spacing: 0) {
+                Toggle(isOn: $flipDashboard) {
+                    Text("Flip dashboard 180°")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                }
+                .tint(DS.Colors.violet)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Divider().background(DS.Colors.border).padding(.horizontal, 14)
+
+                Toggle(isOn: $leanLateralY) {
+                    Text("Phone mounted sideways (landscape)")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                }
+                .tint(DS.Colors.violet)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+            )
+            Text("Flip if the HUD reads upside-down on the tank. Turn ON \u{201C}sideways\u{201D} when the phone's long edge runs across the bike — keeps the lean angle correct.")
                 .font(.system(size: 11, weight: .regular, design: .rounded))
                 .foregroundStyle(DS.Colors.textMuted)
                 .padding(.horizontal, 4)

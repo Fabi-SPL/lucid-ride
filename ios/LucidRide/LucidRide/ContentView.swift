@@ -19,6 +19,10 @@ struct ContentView: View {
     @State private var recorder: RideTelemetryRecorder?
     @State private var postRideActivityId: String?
 
+    /// Flat-on-tank mounts can't auto-rotate (gravity on z), so offer a manual
+    /// 180° flip to get the HUD right-side-up.
+    @AppStorage("lucidride.flipDashboard") private var flipDashboard = false
+
     private let supabase = SupabaseClient.shared
 
     var body: some View {
@@ -41,6 +45,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .rotationEffect(.degrees(flipDashboard ? 180 : 0))
         .animation(DS.Anim.standard, value: activeRide?.id)
         .preferredColorScheme(.dark)
         .statusBarHidden()

@@ -107,8 +107,15 @@ final class RideTelemetryRecorder: ObservableObject {
         live.start(startedAt: rideStartedAt)
         health.startWorkout(startedAt: rideStartedAt)
 
-        // Sampler — 1 Hz waypoints + accumulator advance.
+        // Sampler — driven by BOTH a 1 Hz timer (foreground / while stopped)
+        // AND every GPS fix (works in the background, where the timer is
+        // suspended). sample() throttles itself to ~1 Hz so the two don't
+        // double-count. This is the fix for rides that logged almost nothing
+        // once the screen locked.
         sampleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.sample() }
+        }
+        location.onLocationUpdate = { [weak self] _ in
             Task { @MainActor in self?.sample() }
         }
 
@@ -134,6 +141,7 @@ final class RideTelemetryRecorder: ObservableObject {
     func stop() async {
         sampleTimer?.invalidate(); sampleTimer = nil
         flushTimer?.invalidate(); flushTimer = nil
+        location.onLocationUpdate = nil
         location.stop()
         motion.stop()
         // Persist data FIRST (remaining waypoints + summary) so a force-quit
@@ -151,6 +159,9 @@ final class RideTelemetryRecorder: ObservableObject {
 
     private func sample() {
         let now = Date()
+        // Throttle: the 1 Hz timer AND every GPS callback both call this; keep
+        // a single ~1 Hz cadence so they don't double-count.
+        if let last = lastSampleAt, now.timeIntervalSince(last) < 0.8 { return }
         let loc  = location.lastLocation
         let baro = location.baroAltitude
         let hr   = state?.liveHR
@@ -258,7 +269,13 @@ final class RideTelemetryRecorder: ObservableObject {
         // (or on recalibrate) assumes the bike is upright at that moment.
         var imuLeanDeg: Double? = nil
         if let gx = motion.gravityX, let gy = motion.gravityY, let gz = motion.gravityZ {
-            let raw = atan2(gx, (gy * gy + gz * gz).squareRoot()) * 180.0 / Double.pi
+            // Lateral axis depends on mount: phone long-edge ACROSS the bike
+            // (landscape) → lateral = y; long-edge ALONG the bike (portrait) →
+            // lateral = x. Toggle in Settings ("mounted sideways"); default y.
+            let lateralY = (UserDefaults.standard.object(forKey: "lucidride.leanLateralY") as? Bool) ?? true
+            let raw = (lateralY
+                       ? atan2(gy, (gx * gx + gz * gz).squareRoot())
+                       : atan2(gx, (gy * gy + gz * gz).squareRoot())) * 180.0 / Double.pi
             if leanBaselineDeg == nil { leanBaselineDeg = raw }
             var l = raw - (leanBaselineDeg ?? raw)
             if l > 180 { l -= 360 }
@@ -320,7 +337,7 @@ final class RideTelemetryRecorder: ObservableObject {
             st.liveSpeedKmh   = Double(max(0, speedKmh))
             st.liveLeanDeg    = imuLeanDeg ?? (leanGpsDeg ?? 0)   // IMU is the real body angle
             st.liveDistanceM  = totalDistance_m
-            st.liveMaxLeanDeg = maxLeanGps_deg
+            st.liveMaxLeanDeg = maxImuLean_deg   // match the live gauge (IMU), not GPS lean
             st.livePeakG      = maxAccelG
             st.liveElevGainM  = elevationGain_m
             st.liveIsPaused   = isAutoPaused

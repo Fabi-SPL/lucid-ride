@@ -19,6 +19,12 @@ final class LocationService: NSObject, ObservableObject {
 
     static let shared = LocationService()
 
+    /// Fires on every GPS fix — foreground AND background while recording. The
+    /// recorder samples on this so background recording no longer depends on a
+    /// foreground Timer (iOS suspends those when the app backgrounds, which is
+    /// why a 111-min ride logged only 12 points).
+    var onLocationUpdate: ((CLLocation) -> Void)?
+
     @Published private(set) var lastLocation: CLLocation?
     @Published private(set) var baroAltitude: Double?   // meters, anchored to GPS
     @Published private(set) var authorized: Bool = false
@@ -132,6 +138,7 @@ extension LocationService: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let last = locations.last else { return }
         lastLocation = last
+        onLocationUpdate?(last)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
