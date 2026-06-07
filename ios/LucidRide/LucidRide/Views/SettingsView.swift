@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("lucidride.leanLateralY") private var leanLateralY = true
 
     private let supabase = SupabaseClient.shared
+    @ObservedObject private var spotify = SpotifyController.shared
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -34,6 +35,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 22) {
                         displaySection
                         mountSection
+                        musicSection
                         accountSection
                         buildSection
                         aboutSection
@@ -139,6 +141,57 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
             )
             Text("Flip if the HUD reads upside-down on the tank. Turn ON \u{201C}sideways\u{201D} when the phone's long edge runs across the bike — keeps the lean angle correct.")
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(DS.Colors.textMuted)
+                .padding(.horizontal, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var musicSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("MUSIC", icon: "music.note")
+            VStack(alignment: .leading, spacing: 0) {
+                if spotify.isConnected {
+                    infoRow("Spotify", value: "Connected", color: DS.Colors.success)
+                    Divider().background(DS.Colors.border).padding(.horizontal, 14)
+                    Button { spotify.disconnect() } label: {
+                        HStack {
+                            Text("Disconnect")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DS.Colors.danger)
+                            Spacer()
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(DS.Colors.danger.opacity(0.7))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button { spotify.connect() } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Connect Spotify")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(DS.Colors.textFaint)
+                        }
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+            )
+            Text("Control playback from the ride screen with glove-sized buttons. Needs Spotify Premium + the Spotify app open on this phone.")
                 .font(.system(size: 11, weight: .regular, design: .rounded))
                 .foregroundStyle(DS.Colors.textMuted)
                 .padding(.horizontal, 4)

@@ -74,5 +74,20 @@
 	<array>
 		<string>com.fabi.lucidride.telemetry-flush</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.fabi.lucidride.spotify</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lucidride</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>spotify</string>
+	</array>
 </dict>
 </plist>

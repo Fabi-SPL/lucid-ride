@@ -15,6 +15,7 @@ import SwiftUI
 /// Landscape only (the app is orientation-locked to landscape).
 struct RideActiveHUD: View {
     @ObservedObject var state: HUDState
+    @ObservedObject private var spotify = SpotifyController.shared
     let ending: Bool
     var onEnd: () -> Void
     var onSettings: () -> Void
@@ -29,6 +30,7 @@ struct RideActiveHUD: View {
             heroRow
             Spacer(minLength: 0)
             statStrip
+            musicStrip
             if !state.liveDebug.isEmpty {
                 Text(state.liveDebug)
                     .font(.system(size: 8, weight: .medium, design: .monospaced))
@@ -310,6 +312,70 @@ struct RideActiveHUD: View {
                 .foregroundStyle(DS.Colors.textFaint)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Spotify music strip (glove-friendly controls)
+
+    @ViewBuilder
+    private var musicStrip: some View {
+        if spotify.isConnected {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(spotify.trackTitle ?? "—")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                    Text(spotify.statusNote.isEmpty ? (spotify.artistName ?? "Spotify") : spotify.statusNote)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.Colors.textFaint)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    musicButton("backward.fill", size: 17) { spotify.previous() }
+                    musicButton(spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, prominent: true) { spotify.togglePlayPause() }
+                    musicButton("forward.fill", size: 17) { spotify.next() }
+                }
+            }
+            .padding(.top, 10)
+            .task {
+                while !Task.isCancelled {
+                    await spotify.refreshNowPlaying()
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                }
+            }
+        } else {
+            Button(action: onSettings) {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note").font(.system(size: 10, weight: .bold))
+                    Text("CONNECT SPOTIFY")
+                        .font(.system(size: 9, weight: .heavy, design: .rounded))
+                        .tracking(1.2)
+                }
+                .foregroundStyle(DS.Colors.textFaint)
+                .padding(.top, 8)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func musicButton(_ icon: String, size: CGFloat, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .black))
+                .foregroundStyle(prominent ? .black : DS.Colors.textPrimary)
+                .frame(width: prominent ? 60 : 52, height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(prominent ? Color(red: 0.114, green: 0.725, blue: 0.329) : Color.white.opacity(0.07))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 
