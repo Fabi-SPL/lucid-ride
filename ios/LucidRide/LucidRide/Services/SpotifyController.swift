@@ -18,8 +18,12 @@ final class SpotifyController: NSObject, ObservableObject {
 
     static let shared = SpotifyController()
 
-    // Client ID is public — it ships inside every app build. Never embed the secret.
-    private let clientID    = "4b6bc22bcd16410498d0f1685791251f"
+    // Injected at build from the SPOTIFY_CLIENT_ID GitHub secret (see CI). Public
+    // forks keep the placeholder → Spotify stays unconfigured for them, so nobody
+    // inherits Fabi's app registration. (A Client ID is public by design — it ships
+    // in every binary — the secret just keeps it out of the public SOURCE. Account
+    // access still needs per-user OAuth, which is never stored in the repo.)
+    private let clientID    = "__SPOTIFY_CLIENT_ID__"
     private let redirectURI = "lucidride://spotify-callback"
     private let scopes      = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
 
@@ -49,6 +53,10 @@ final class SpotifyController: NSObject, ObservableObject {
     // MARK: - Auth
 
     func connect() {
+        guard !clientID.hasPrefix("__"), !clientID.isEmpty else {
+            statusNote = "Spotify isn't set up in this build"
+            return
+        }
         let verifier = Self.randomCodeVerifier()
         pendingVerifier = verifier
         let challenge = Self.codeChallenge(for: verifier)

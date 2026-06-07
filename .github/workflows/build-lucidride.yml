@@ -56,6 +56,18 @@ jobs:
           echo "=== BuildInfo.swift after injection ==="
           cat "$BUILD_INFO"
 
+      - name: Inject Spotify Client ID (from secret — placeholder stays for forks)
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+        run: |
+          if [ -n "$SPOTIFY_CLIENT_ID" ]; then
+            FILE=ios/LucidRide/LucidRide/Services/SpotifyController.swift
+            sed -i '' "s|__SPOTIFY_CLIENT_ID__|${SPOTIFY_CLIENT_ID}|" "$FILE"
+            echo "Spotify Client ID injected from secret."
+          else
+            echo "No SPOTIFY_CLIENT_ID secret set — leaving placeholder (e.g. a public fork build)."
+          fi
+
       - name: Build for device (ad-hoc signed with entitlements)
         working-directory: ios/LucidRide
         run: |
