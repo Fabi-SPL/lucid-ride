@@ -38,11 +38,24 @@ final class TelemetryUploader {
 
     /// Persist a failed batch to disk so the background task can retry it.
     /// Body is the array-of-dicts that was about to POST to /rest/v1/ride_telemetry.
-    func stashFailedBatch(_ body: [[String: Any]]) {
+    @discardableResult
+    func stashFailedBatch(_ body: [[String: Any]]) -> String? {
+        guard let dir = pendingDir else { return nil }
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        let name = "\(UUID().uuidString).json"
+        do {
+            try data.write(to: dir.appendingPathComponent(name), options: .atomic)
+            return name
+        } catch {
+            return nil
+        }
+    }
+
+    /// Delete a stashed batch by filename — called by the recorder when the
+    /// live upload of that same batch succeeded, so the disk copy isn't re-sent.
+    func removeStashed(_ name: String) {
         guard let dir = pendingDir else { return }
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
-        let file = dir.appendingPathComponent("\(UUID().uuidString).json")
-        try? data.write(to: file, options: .atomic)
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
     }
 
     /// Submit a BGProcessingTaskRequest. The system schedules it when the
@@ -80,7 +93,10 @@ final class TelemetryUploader {
     // MARK: - Internals
 
     private func runFlush(task: BGProcessingTask?) async {
-        let deadline = Date().addingTimeInterval(25)  // BG slot is ~30s; bail at 25s
+        // BG slot is ~30s → bail at 25s. Foreground drain (task == nil, e.g. END
+        // RIDE or app-open) has no system limit, so give it room to clear a full
+        // ride's backlog in one pass instead of dribbling across sessions.
+        let deadline = Date().addingTimeInterval(task == nil ? 120 : 25)
         guard let dir = pendingDir else {
             task?.setTaskCompleted(success: true); return
         }

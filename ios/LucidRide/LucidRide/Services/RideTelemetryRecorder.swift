@@ -148,6 +148,10 @@ final class RideTelemetryRecorder: ObservableObject {
         // during the slower HealthKit finish can't lose hr_avg / distance.
         await flush()
         await writeSummary()
+        // Foreground bulk-drain: END is on-screen with full signal, so push
+        // everything the ride stashed to disk now instead of waiting for the
+        // system to grant a background slot.
+        await TelemetryUploader.shared.flushPendingNow()
         live.end()
         await health.finishWorkout(endedAt: Date())
         // If anything failed to upload, ask iOS to retry in the background
@@ -281,7 +285,11 @@ final class RideTelemetryRecorder: ObservableObject {
             if l > 180 { l -= 360 }
             if l < -180 { l += 360 }
             if l.isFinite {
-                imuLeanDeg = l
+                // Negate: as mounted, gravity-x grew toward the device's LEFT, so a
+                // right lean came out negative and the HUD read "LEFT" while leaning
+                // right (Fabi, 2026-06-07). Flip → right = positive = RIGHT, matching
+                // the GPS-lean convention and the gauge tilt. Live HUD + recorded.
+                imuLeanDeg = -l
                 maxImuLean_deg = max(maxImuLean_deg, abs(l))
             }
         }
@@ -346,7 +354,10 @@ final class RideTelemetryRecorder: ObservableObject {
         // First-5-samples kick: flush early so even a 15 s test ride proves the
         // write path instead of waiting for the 10 s timer to line up.
         sampleCount += 1
-        if sampleCount == 5 { Task { @MainActor in await self.flush() } }
+        // Flush off the SAMPLER (not just the foreground 10s timer) so batches
+        // get stashed to disk in the background, where that timer is suspended.
+        // First-5 kick proves the path on a short test ride; then every ~10 s.
+        if sampleCount == 5 || sampleCount % 10 == 0 { Task { @MainActor in await self.flush() } }
 
         pushDebug()
     }
@@ -413,20 +424,25 @@ final class RideTelemetryRecorder: ObservableObject {
         guard !waypointBuffer.isEmpty else { return }
         let batch = waypointBuffer
         waypointBuffer.removeAll(keepingCapacity: true)
+        // DISK FIRST: persist the batch BEFORE the network attempt. The sampler
+        // runs in the background (GPS callback) but the upload can be suspended
+        // or the app killed mid-flight — RAM was the only copy, so a 64-min ride
+        // held 3,849 points in memory and only 10 reached the server (Fabi,
+        // 2026-06-07). Stash now → drain later via END / foreground / BG task.
+        let stashName = supabase.telemetryBatchBody(waypoints: batch).flatMap {
+            TelemetryUploader.shared.stashFailedBatch($0)
+        }
         do {
             try await supabase.insertTelemetryBatch(waypoints: batch)
             flushedCount += batch.count
+            // Live upload won — drop the disk copy so it isn't sent twice.
+            if let stashName { TelemetryUploader.shared.removeStashed(stashName) }
             lastFlushNote = "ok +\(batch.count)"
         } catch {
-            // Best-effort: requeue for next flush AND stash a serialized copy
-            // to disk so the BGProcessingTask can retry even if the app gets
-            // killed mid-ride.
-            waypointBuffer.insert(contentsOf: batch, at: 0)
-            if let body = supabase.telemetryBatchBody(waypoints: batch) {
-                TelemetryUploader.shared.stashFailedBatch(body)
-            }
+            // Already safe on disk; do NOT requeue into waypointBuffer (that would
+            // double-upload once the stash drains). Leave it for the drainers.
             let ns = error as NSError
-            lastFlushNote = "ERR \(ns.code) \(ns.domain.replacingOccurrences(of: "NSURLErrorDomain", with: "net"))"
+            lastFlushNote = "stash \(ns.code) \(ns.domain.replacingOccurrences(of: "NSURLErrorDomain", with: "net"))"
         }
         pushDebug()
     }
