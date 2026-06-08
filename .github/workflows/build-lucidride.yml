@@ -187,7 +187,9 @@ jobs:
                 {"name":"NSBluetoothPeripheralUsageDescription","usageDescription":"Connects to bike telemetry hardware via BLE (legacy peripheral key)."},
                 {"name":"NSLocationWhenInUseUsageDescription","usageDescription":"Records ride GPS track."},
                 {"name":"NSLocationAlwaysAndWhenInUseUsageDescription","usageDescription":"Records ride GPS in background."},
-                {"name":"NSMotionUsageDescription","usageDescription":"iPhone IMU fallback for lean angle."}
+                {"name":"NSMotionUsageDescription","usageDescription":"iPhone IMU fallback for lean angle."},
+                {"name":"NSHealthShareUsageDescription","usageDescription":"Reads Watch heart-rate to overlay body state on each ride."},
+                {"name":"NSHealthUpdateUsageDescription","usageDescription":"Logs each ride as a workout in Apple Health."}
               ]
             }
           }
