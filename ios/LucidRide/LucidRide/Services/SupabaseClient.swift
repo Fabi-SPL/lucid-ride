@@ -221,13 +221,22 @@ final class SupabaseClient {
     }
 
     /// Latest HR reading from realtime_health — polled every few seconds by HUDState.
+    /// FRESHNESS GUARD: only accept a reading from the last 120 s. If the Whoop
+    /// pipeline stops streaming (BLE drop / LucidHealth not running), the table
+    /// goes stale and the newest row is just whatever was last seen — e.g. a
+    /// resting 74 bpm from before the ride. Without this, that stale value gets
+    /// shown AND recorded as "live" for the whole ride (Fabi 2026-06-08: HR
+    /// frozen at 74 across 5,390 waypoints). Stale → no row → nil → HUD shows
+    /// "—" and the recorder writes no HR, instead of a fake flatline.
     func fetchLatestHR() async throws -> HRSample? {
+        let freshISO = ISO8601DateFormatter.lucid.string(from: Date().addingTimeInterval(-120))
         let queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "select",     value: "recorded_at,heart_rate,hrv_rmssd"),
-            URLQueryItem(name: "user_id",    value: "eq.\(userId)"),
-            URLQueryItem(name: "heart_rate", value: "not.is.null"),
-            URLQueryItem(name: "order",      value: "recorded_at.desc"),
-            URLQueryItem(name: "limit",      value: "1")
+            URLQueryItem(name: "select",      value: "recorded_at,heart_rate,hrv_rmssd"),
+            URLQueryItem(name: "user_id",     value: "eq.\(userId)"),
+            URLQueryItem(name: "heart_rate",  value: "not.is.null"),
+            URLQueryItem(name: "recorded_at", value: "gte.\(freshISO)"),
+            URLQueryItem(name: "order",       value: "recorded_at.desc"),
+            URLQueryItem(name: "limit",       value: "1")
         ]
         guard let req = anonRequest(path: "/rest/v1/realtime_health", queryItems: queryItems) else {
             return nil
