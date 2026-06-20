@@ -12,10 +12,13 @@ import SwiftUI
 /// 3 s HR poll. Tearing the SceneKit bike down during a ride also saves a
 /// meaningful chunk of battery on a long ride.
 ///
-/// Landscape only (the app is orientation-locked to landscape).
+/// Adapts to the dashboard orientation chosen in Settings
+/// (`lucidride.portraitMode`): landscape = wide glance layout; portrait = tall
+/// layout with big, reachable music controls for gloved hands.
 struct RideActiveHUD: View {
     @ObservedObject var state: HUDState
     @ObservedObject private var spotify = SpotifyController.shared
+    @AppStorage("lucidride.portraitMode") private var portraitMode = false
     let ending: Bool
     var onEnd: () -> Void
     var onSettings: () -> Void
@@ -24,6 +27,14 @@ struct RideActiveHUD: View {
     private var leanColor: Color { DS.Colors.leanColor(state.liveLeanDeg) }
 
     var body: some View {
+        Group {
+            if portraitMode { portraitBody } else { landscapeBody }
+        }
+    }
+
+    // MARK: - Landscape layout (wide glance)
+
+    private var landscapeBody: some View {
         VStack(spacing: 0) {
             topBar
             Spacer(minLength: 0)
@@ -31,56 +42,102 @@ struct RideActiveHUD: View {
             Spacer(minLength: 0)
             statStrip
             musicStrip
-            if !state.liveDebug.isEmpty {
-                Text(state.liveDebug)
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
-                    .foregroundStyle(DS.Colors.textFaint)
-                    .padding(.top, 4)
-            }
+            debugLine
         }
         .padding(.horizontal, 26)
         .padding(.top, 12)
         .padding(.bottom, 16)
     }
 
+    // MARK: - Portrait layout (tall, glove-friendly)
+
+    private var portraitBody: some View {
+        VStack(spacing: 0) {
+            portraitTopBar
+            Spacer(minLength: 6)
+            speedCluster
+            Spacer(minLength: 12)
+            HStack(alignment: .center, spacing: 18) {
+                leanGauge
+                hrCluster
+            }
+            Spacer(minLength: 12)
+            portraitStatGrid
+            Spacer(minLength: 14)
+            musicStrip
+            debugLine
+            Spacer(minLength: 14)
+            endButtonWide
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 16)
+        .padding(.bottom, 22)
+    }
+
+    @ViewBuilder
+    private var debugLine: some View {
+        if !state.liveDebug.isEmpty {
+            Text(state.liveDebug)
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundStyle(DS.Colors.textFaint)
+                .padding(.top, 4)
+        }
+    }
+
     // MARK: - Top bar
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(state.liveHR == nil ? DS.Colors.textFaint : DS.Colors.success)
-                .frame(width: 7, height: 7)
-                .opacity(state.liveHR == nil ? 0.4 : 1)
-                .animation(DS.Anim.breath, value: state.liveHR != nil)
-
-            Text("LUCID RIDE")
-                .font(.system(size: 10, weight: .heavy, design: .rounded))
-                .tracking(1.2)
-                .foregroundStyle(DS.Colors.textMuted)
-
-            if state.liveIsPaused {
-                pausedBadge
-            } else {
-                Text("·").foregroundStyle(DS.Colors.textFaint)
-                Text(HUDState.zoneLabel(for: state.liveHR).uppercased())
-                    .font(.system(size: 10, weight: .heavy, design: .rounded))
-                    .tracking(1.2)
-                    .foregroundStyle(zoneColor)
-            }
-
+            statusLeading
             Spacer()
-
-            Button(action: onSettings) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(DS.Colors.textFaint)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.white.opacity(0.04)))
-            }
-            .buttonStyle(.plain)
-
+            settingsButton
             endButton
         }
+    }
+
+    /// Portrait keeps the status chips + gear up top, but moves END to a big
+    /// full-width button at the very bottom (out of the way of music taps).
+    private var portraitTopBar: some View {
+        HStack(spacing: 10) {
+            statusLeading
+            Spacer()
+            settingsButton
+        }
+    }
+
+    @ViewBuilder
+    private var statusLeading: some View {
+        Circle()
+            .fill(state.liveHR == nil ? DS.Colors.textFaint : DS.Colors.success)
+            .frame(width: 7, height: 7)
+            .opacity(state.liveHR == nil ? 0.4 : 1)
+            .animation(DS.Anim.breath, value: state.liveHR != nil)
+
+        Text("LUCID RIDE")
+            .font(.system(size: 10, weight: .heavy, design: .rounded))
+            .tracking(1.2)
+            .foregroundStyle(DS.Colors.textMuted)
+
+        if state.liveIsPaused {
+            pausedBadge
+        } else {
+            Text("·").foregroundStyle(DS.Colors.textFaint)
+            Text(HUDState.zoneLabel(for: state.liveHR).uppercased())
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                .tracking(1.2)
+                .foregroundStyle(zoneColor)
+        }
+    }
+
+    private var settingsButton: some View {
+        Button(action: onSettings) {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(DS.Colors.textFaint)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.white.opacity(0.04)))
+        }
+        .buttonStyle(.plain)
     }
 
     private var pausedBadge: some View {
@@ -111,6 +168,26 @@ struct RideActiveHUD: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 9)
+            .background(Capsule().fill(DS.Colors.danger.opacity(ending ? 0.45 : 0.85)))
+        }
+        .buttonStyle(.plain)
+        .disabled(ending)
+    }
+
+    /// Portrait END — full-width, anchored at the bottom of the tall layout.
+    private var endButtonWide: some View {
+        Button(action: onEnd) {
+            HStack(spacing: 8) {
+                Image(systemName: ending ? "hourglass" : "stop.fill")
+                    .font(.system(size: 14, weight: .black))
+                Text(ending ? "ENDING…" : "END · \(state.elapsedLabel)")
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
             .background(Capsule().fill(DS.Colors.danger.opacity(ending ? 0.45 : 0.85)))
         }
         .buttonStyle(.plain)
@@ -288,6 +365,39 @@ struct RideActiveHUD: View {
         )
     }
 
+    /// Portrait is narrow, so the 5 stats reflow into a 3-column grid instead of
+    /// one cramped row.
+    private var portraitStatGrid: some View {
+        let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+        return LazyVGrid(columns: cols, spacing: 14) {
+            hudStat(icon: "point.topleft.down.curvedto.point.bottomright.up",
+                    value: String(format: "%.1f", state.liveDistanceM / 1000),
+                    unit: "KM", color: DS.Colors.categoryRoute)
+            hudStat(icon: "timer",
+                    value: state.elapsedLabel,
+                    unit: "TIME", color: DS.Colors.violet, mono: true)
+            hudStat(icon: "arrow.left.and.right",
+                    value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
+                    unit: "MAX LEAN", color: DS.Colors.teal)
+            hudStat(icon: "bolt.fill",
+                    value: String(format: "%.1fg", state.livePeakG),
+                    unit: "PEAK G", color: DS.Colors.amber)
+            hudStat(icon: "mountain.2.fill",
+                    value: "+\(Int(state.liveElevGainM.rounded()))",
+                    unit: "ELEV M", color: DS.Colors.categoryRoute)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DS.Radius.lg, style: .continuous)
+                .stroke(DS.Colors.border, lineWidth: 0.5)
+        )
+    }
+
     private var stripDivider: some View {
         Rectangle()
             .fill(DS.Colors.border)
@@ -319,32 +429,13 @@ struct RideActiveHUD: View {
     @ViewBuilder
     private var musicStrip: some View {
         if spotify.isConnected {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(spotify.trackTitle ?? "—")
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                        .foregroundStyle(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                    Text(spotify.statusNote.isEmpty ? (spotify.artistName ?? "Spotify") : spotify.statusNote)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundStyle(DS.Colors.textFaint)
-                        .lineLimit(1)
+            connectedMusic
+                .task {
+                    while !Task.isCancelled {
+                        await spotify.refreshNowPlaying()
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 10) {
-                    musicButton("backward.fill", size: 17) { spotify.previous() }
-                    musicButton(spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, prominent: true) { spotify.togglePlayPause() }
-                    musicButton("forward.fill", size: 17) { spotify.next() }
-                }
-            }
-            .padding(.top, 10)
-            .task {
-                while !Task.isCancelled {
-                    await spotify.refreshNowPlaying()
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                }
-            }
         } else {
             Button(action: onSettings) {
                 HStack(spacing: 6) {
@@ -358,6 +449,47 @@ struct RideActiveHUD: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// Portrait stacks the track label over three full-width buttons (huge glove
+    /// targets); landscape keeps the compact label-left / buttons-right row.
+    @ViewBuilder
+    private var connectedMusic: some View {
+        if portraitMode {
+            VStack(spacing: 12) {
+                trackLabel(centered: true)
+                HStack(spacing: 12) {
+                    musicButtonWide("backward.fill", size: 22) { spotify.previous() }
+                    musicButtonWide(spotify.isPlaying ? "pause.fill" : "play.fill", size: 28, prominent: true) { spotify.togglePlayPause() }
+                    musicButtonWide("forward.fill", size: 22) { spotify.next() }
+                }
+            }
+            .padding(.top, 4)
+        } else {
+            HStack(spacing: 14) {
+                trackLabel(centered: false)
+                HStack(spacing: 10) {
+                    musicButton("backward.fill", size: 17) { spotify.previous() }
+                    musicButton(spotify.isPlaying ? "pause.fill" : "play.fill", size: 20, prominent: true) { spotify.togglePlayPause() }
+                    musicButton("forward.fill", size: 17) { spotify.next() }
+                }
+            }
+            .padding(.top, 10)
+        }
+    }
+
+    private func trackLabel(centered: Bool) -> some View {
+        VStack(alignment: centered ? .center : .leading, spacing: 1) {
+            Text(spotify.trackTitle ?? "—")
+                .font(.system(size: centered ? 13 : 12, weight: .heavy, design: .rounded))
+                .foregroundStyle(DS.Colors.textPrimary)
+                .lineLimit(1)
+            Text(spotify.statusNote.isEmpty ? (spotify.artistName ?? "Spotify") : spotify.statusNote)
+                .font(.system(size: centered ? 10 : 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(DS.Colors.textFaint)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
     }
 
     private func musicButton(_ icon: String, size: CGFloat, prominent: Bool = false, action: @escaping () -> Void) -> some View {
@@ -374,6 +506,27 @@ struct RideActiveHUD: View {
                         .fill(prominent ? Color(red: 0.114, green: 0.725, blue: 0.329) : Color.white.opacity(0.07))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Portrait music button — fills its third of the row and stands 64pt tall
+    /// for a confident gloved tap.
+    private func musicButtonWide(_ icon: String, size: CGFloat, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .black))
+                .foregroundStyle(prominent ? .black : DS.Colors.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 64)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(prominent ? Color(red: 0.114, green: 0.725, blue: 0.329) : Color.white.opacity(0.07))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
     }

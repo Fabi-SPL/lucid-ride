@@ -23,6 +23,11 @@ struct ContentView: View {
     /// 180° flip to get the HUD right-side-up.
     @AppStorage("lucidride.flipDashboard") private var flipDashboard = false
 
+    /// Portrait (vertical) vs landscape (horizontal) dashboard. Default false =
+    /// landscape (original behavior). Portrait puts big music controls within
+    /// easy thumb reach for gloved hands.
+    @AppStorage("lucidride.portraitMode") private var portraitMode = false
+
     private let supabase = SupabaseClient.shared
 
     var body: some View {
@@ -64,6 +69,7 @@ struct ContentView: View {
         }
         .onAppear { onEnter() }
         .onDisappear { onExit() }
+        .onChange(of: portraitMode) { _, _ in applyOrientation() }
         .onReceive(NotificationCenter.default.publisher(for: .lucidRideAuthChanged)) { _ in
             Task { await refreshActiveRide() }
         }
@@ -298,7 +304,7 @@ struct ContentView: View {
 
     private func onEnter() {
         UIApplication.shared.isIdleTimerDisabled = true
-        forceLandscape()
+        applyOrientation()
         Task {
             await refreshActiveRide()
             state.start(activeRide: activeRide)
@@ -317,10 +323,14 @@ struct ContentView: View {
         state.stop()
     }
 
-    private func forceLandscape() {
+    private func applyOrientation() {
         guard let scene = UIApplication.shared.connectedScenes
             .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { _ in }
+        let mask: UIInterfaceOrientationMask = portraitMode ? .portrait : .landscape
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        // Re-query the AppDelegate's supported-orientation gate so the lock
+        // matches the freshly-stored toggle value.
+        scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 
     // MARK: - Ride control

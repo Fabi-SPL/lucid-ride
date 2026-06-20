@@ -18,6 +18,9 @@ struct SettingsView: View {
     /// Lean lateral axis. true = phone long-edge ACROSS the bike (landscape on
     /// the tank); false = long-edge ALONG the bike (portrait).
     @AppStorage("lucidride.leanLateralY") private var leanLateralY = true
+    /// Dashboard layout orientation. false = landscape (wide), true = portrait
+    /// (tall, big reachable music controls). Independent of the lean axis above.
+    @AppStorage("lucidride.portraitMode") private var portraitMode = false
 
     private let supabase = SupabaseClient.shared
     @ObservedObject private var spotify = SpotifyController.shared
@@ -117,6 +120,17 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("MOUNT", icon: "iphone.gen3")
             VStack(spacing: 0) {
+                Toggle(isOn: $portraitMode) {
+                    Text("Portrait (vertical) dashboard")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                }
+                .tint(DS.Colors.violet)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                Divider().background(DS.Colors.border).padding(.horizontal, 14)
+
                 Toggle(isOn: $flipDashboard) {
                     Text("Flip dashboard 180°")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -140,7 +154,7 @@ struct SettingsView: View {
             .background(
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
             )
-            Text("Flip if the HUD reads upside-down on the tank. Turn ON \u{201C}sideways\u{201D} when the phone's long edge runs across the bike — keeps the lean angle correct.")
+            Text("Portrait gives you tall, big music buttons that are easy to hit with gloves. Flip if the HUD reads upside-down on the tank. Turn ON \u{201C}sideways\u{201D} when the phone's long edge runs across the bike — keeps the lean angle correct.")
                 .font(.system(size: 11, weight: .regular, design: .rounded))
                 .foregroundStyle(DS.Colors.textMuted)
                 .padding(.horizontal, 4)
