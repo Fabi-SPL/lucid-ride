@@ -21,6 +21,9 @@ struct SettingsView: View {
     /// Dashboard layout orientation. false = landscape (wide), true = portrait
     /// (tall, big reachable music controls). Independent of the lean axis above.
     @AppStorage("lucidride.portraitMode") private var portraitMode = false
+    /// Phone-IMU lean angle. Default OFF — a free-rotating phone mount makes the
+    /// reading meaningless. Use a rigid sensor (RaceBox) for real lean/G instead.
+    @AppStorage("lucidride.leanEnabled") private var leanEnabled = false
 
     private let supabase = SupabaseClient.shared
     @ObservedObject private var spotify = SpotifyController.shared
@@ -142,19 +145,32 @@ struct SettingsView: View {
 
                 Divider().background(DS.Colors.border).padding(.horizontal, 14)
 
-                Toggle(isOn: $leanLateralY) {
-                    Text("Phone mounted sideways (landscape)")
+                Toggle(isOn: $leanEnabled) {
+                    Text("Lean angle (phone IMU)")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(DS.Colors.textPrimary)
                 }
                 .tint(DS.Colors.violet)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
+
+                if leanEnabled {
+                    Divider().background(DS.Colors.border).padding(.horizontal, 14)
+
+                    Toggle(isOn: $leanLateralY) {
+                        Text("Phone mounted sideways (landscape)")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DS.Colors.textPrimary)
+                    }
+                    .tint(DS.Colors.violet)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
             )
-            Text("Portrait gives you tall, big music buttons that are easy to hit with gloves. Flip if the HUD reads upside-down on the tank. Turn ON \u{201C}sideways\u{201D} when the phone's long edge runs across the bike — keeps the lean angle correct.")
+            Text("Portrait gives you tall, big music buttons that are easy to hit with gloves. Flip if the HUD reads upside-down on the tank. Leave \u{201C}lean angle\u{201D} OFF on a free-rotating mount — it's meaningless there; use a rigid sensor (RaceBox) for real lean. The \u{201C}sideways\u{201D} axis only matters when lean is on.")
                 .font(.system(size: 11, weight: .regular, design: .rounded))
                 .foregroundStyle(DS.Colors.textMuted)
                 .padding(.horizontal, 4)

@@ -330,16 +330,20 @@ struct PostRideSummarySheet: View {
 
     @ViewBuilder
     private func imuSection(ride: Ride) -> some View {
+        let leanOn = UserDefaults.standard.bool(forKey: "lucidride.leanEnabled")
         let lean = ride.metadata?.maxLeanDeg ?? 0
         let accel = ride.metadata?.maxAccelG ?? 0
-        if lean < 1 && accel < 0.05 {
+        let showLean = leanOn && lean >= 1
+        if !showLean && accel < 0.05 {
             EmptyView()
         } else {
             HStack(spacing: 10) {
-                imuTile(value: String(format: "%.0f°", lean),
-                        label: "MAX LEAN",
-                        icon: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
-                        tint: DS.Colors.violet)
+                if showLean {
+                    imuTile(value: String(format: "%.0f°", lean),
+                            label: "MAX LEAN",
+                            icon: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
+                            tint: DS.Colors.violet)
+                }
                 imuTile(value: String(format: "%.2fG", accel),
                         label: "PEAK ACCEL",
                         icon: "speedometer",

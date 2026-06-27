@@ -243,14 +243,18 @@ final class RideTelemetryRecorder: ObservableObject {
         // IMU summary extremes — consume rolling stats (max within this 1 s
         // window, sampled at 100 Hz). Preserves peak lean / accel events that
         // would otherwise be averaged out at 1 Hz.
+        // Phone-IMU lean is OFF by default — a free-rotating mount makes it
+        // meaningless. Use a rigid sensor (RaceBox) for real lean. We still
+        // record peak G (magnitude is far less mount-sensitive than lean angle).
+        let leanOn = UserDefaults.standard.bool(forKey: "lucidride.leanEnabled")
         if recordingActive {
-            if motionStats.maxAbsRoll_rad.isFinite { maxLean_rad = max(maxLean_rad, motionStats.maxAbsRoll_rad) }
+            if leanOn, motionStats.maxAbsRoll_rad.isFinite { maxLean_rad = max(maxLean_rad, motionStats.maxAbsRoll_rad) }
             if motionStats.maxAccelG.isFinite { maxAccelG = max(maxAccelG, motionStats.maxAccelG) }
         }
 
         // GPS-derived lean angle (RaceChrono/AiM formula: atan(v² / (r·g)) with
         // 3-sample FIR smoothing and turn radius from consecutive bearings).
-        let leanGpsDeg: Double? = recordingActive ? gpsLeanAngleDeg(loc: loc, speedMps: speedNow_mps, now: now) : nil
+        let leanGpsDeg: Double? = (recordingActive && leanOn) ? gpsLeanAngleDeg(loc: loc, speedMps: speedNow_mps, now: now) : nil
         if let l = leanGpsDeg, l.isFinite {
             maxLeanGps_deg = max(maxLeanGps_deg, abs(l))
         }
@@ -272,7 +276,7 @@ final class RideTelemetryRecorder: ObservableObject {
         // plane: atan2(gx, hypot(gy, gz)). Baseline captured at the first sample
         // (or on recalibrate) assumes the bike is upright at that moment.
         var imuLeanDeg: Double? = nil
-        if let gx = motion.gravityX, let gy = motion.gravityY, let gz = motion.gravityZ {
+        if leanOn, let gx = motion.gravityX, let gy = motion.gravityY, let gz = motion.gravityZ {
             // Lateral axis depends on mount: phone long-edge ACROSS the bike
             // (landscape) → lateral = y; long-edge ALONG the bike (portrait) →
             // lateral = x. Toggle in Settings ("mounted sideways"); default y.
@@ -343,9 +347,9 @@ final class RideTelemetryRecorder: ObservableObject {
         // (HR + elapsed are already maintained by HUDState's own pollers.)
         if let st = state {
             st.liveSpeedKmh   = Double(max(0, speedKmh))
-            st.liveLeanDeg    = imuLeanDeg ?? (leanGpsDeg ?? 0)   // IMU is the real body angle
+            st.liveLeanDeg    = leanOn ? (imuLeanDeg ?? (leanGpsDeg ?? 0)) : 0   // IMU is the real body angle
             st.liveDistanceM  = totalDistance_m
-            st.liveMaxLeanDeg = maxImuLean_deg   // match the live gauge (IMU), not GPS lean
+            st.liveMaxLeanDeg = leanOn ? maxImuLean_deg : 0   // match the live gauge (IMU), not GPS lean
             st.livePeakG      = maxAccelG
             st.liveElevGainM  = elevationGain_m
             st.liveIsPaused   = isAutoPaused

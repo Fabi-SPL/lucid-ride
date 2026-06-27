@@ -19,6 +19,9 @@ struct RideActiveHUD: View {
     @ObservedObject var state: HUDState
     @ObservedObject private var spotify = SpotifyController.shared
     @AppStorage("lucidride.portraitMode") private var portraitMode = false
+    /// Phone-IMU lean. Default OFF (useless on a free-rotating mount → RaceBox
+    /// owns lean). Hides the lean gauge + MAX LEAN stat when off.
+    @AppStorage("lucidride.leanEnabled") private var leanEnabled = false
     let ending: Bool
     var onEnd: () -> Void
     var onSettings: () -> Void
@@ -57,8 +60,12 @@ struct RideActiveHUD: View {
             Spacer(minLength: 6)
             speedCluster
             Spacer(minLength: 12)
-            HStack(alignment: .center, spacing: 18) {
-                leanGauge
+            if leanEnabled {
+                HStack(alignment: .center, spacing: 18) {
+                    leanGauge
+                    hrCluster
+                }
+            } else {
                 hrCluster
             }
             Spacer(minLength: 12)
@@ -200,8 +207,10 @@ struct RideActiveHUD: View {
         HStack(alignment: .center, spacing: 0) {
             speedCluster
                 .frame(maxWidth: .infinity)
-            leanGauge
-                .frame(width: 150)
+            if leanEnabled {
+                leanGauge
+                    .frame(width: 150)
+            }
             hrCluster
                 .frame(maxWidth: .infinity)
         }
@@ -340,10 +349,12 @@ struct RideActiveHUD: View {
             hudStat(icon: "timer",
                     value: state.elapsedLabel,
                     unit: "TIME", color: DS.Colors.violet, mono: true)
-            stripDivider
-            hudStat(icon: "arrow.left.and.right",
-                    value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
-                    unit: "MAX LEAN", color: DS.Colors.teal)
+            if leanEnabled {
+                stripDivider
+                hudStat(icon: "arrow.left.and.right",
+                        value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
+                        unit: "MAX LEAN", color: DS.Colors.teal)
+            }
             stripDivider
             hudStat(icon: "bolt.fill",
                     value: String(format: "%.1fg", state.livePeakG),
@@ -376,9 +387,11 @@ struct RideActiveHUD: View {
             hudStat(icon: "timer",
                     value: state.elapsedLabel,
                     unit: "TIME", color: DS.Colors.violet, mono: true)
-            hudStat(icon: "arrow.left.and.right",
-                    value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
-                    unit: "MAX LEAN", color: DS.Colors.teal)
+            if leanEnabled {
+                hudStat(icon: "arrow.left.and.right",
+                        value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
+                        unit: "MAX LEAN", color: DS.Colors.teal)
+            }
             hudStat(icon: "bolt.fill",
                     value: String(format: "%.1fg", state.livePeakG),
                     unit: "PEAK G", color: DS.Colors.amber)
