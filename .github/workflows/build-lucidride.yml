@@ -178,8 +178,8 @@ jobs:
             "versionDescription": "Build ${RUN_NUMBER}",
             "downloadURL": "${DOWNLOAD_URL}",
             "size": ${IPA_SIZE},
-            "minOSVersion": "26.0",
-            "versions": [{"version":"1.0.${RUN_NUMBER}","buildVersion":"${RUN_NUMBER}","date":"${BUILD_DATE_ISO}","size":${IPA_SIZE},"downloadURL":"${DOWNLOAD_URL}","localizedDescription":"Build ${RUN_NUMBER}","minOSVersion":"26.0"}],
+            "minOSVersion": "16.0",
+            "versions": [{"version":"1.0.${RUN_NUMBER}","buildVersion":"${RUN_NUMBER}","date":"${BUILD_DATE_ISO}","size":${IPA_SIZE},"downloadURL":"${DOWNLOAD_URL}","localizedDescription":"Build ${RUN_NUMBER}","minOSVersion":"16.0"}],
             "appPermissions": {
               "entitlements": [{"name":"com.apple.security.application-groups"}],
               "privacy": [
