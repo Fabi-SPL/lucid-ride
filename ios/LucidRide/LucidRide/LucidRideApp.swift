@@ -6,15 +6,18 @@ extension Notification.Name {
     static let lucidRideAuthChanged = Notification.Name("lucidRideAuthChanged")
 }
 
-/// Locks the app to whichever orientation the user picked in Settings
-/// (`lucidride.portraitMode`). This is the authoritative runtime gate — it
-/// overrides the Info.plist list, so a mounted phone can't auto-rotate away
-/// from the chosen layout. ContentView nudges the actual rotation with
-/// `requestGeometryUpdate` whenever the toggle flips.
+/// Authoritative runtime orientation gate — overrides the Info.plist list so a
+/// mounted phone can't auto-rotate away from the chosen layout. Two states:
+///   • Not riding (Garage home) → always portrait (scrollable list).
+///   • Riding → the Settings `lucidride.portraitMode` toggle decides.
+/// ContentView keeps `lucidride.rideActive` in sync and nudges the actual
+/// rotation with `requestGeometryUpdate` on every transition.
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        UserDefaults.standard.bool(forKey: "lucidride.portraitMode") ? .portrait : .landscape
+        let riding = UserDefaults.standard.bool(forKey: "lucidride.rideActive")
+        guard riding else { return .portrait }
+        return UserDefaults.standard.bool(forKey: "lucidride.portraitMode") ? .portrait : .landscape
     }
 }
 
