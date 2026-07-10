@@ -18,7 +18,7 @@ final class SupabaseClient {
     static let shared = SupabaseClient()
 
     let baseURL = "https://db.speed-running-life.com"
-    let anonKey = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3NDEyOTQ4MDAsICJleHAiOiA5OTk5OTk5OTk5fQ.y3KAL0j_RC9hlzrNVkgZXPxifyRZX3cF_d7-iuE4kA8"
+    let anonKey = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIiwgImlhdCI6IDE3ODM2MjY1NjcsICJleHAiOiA5OTk5OTk5OTk5fQ.60fwzoea_PwWSwr0WVgyUA0Y0r5xZ47KqjZesjvC4nU"
     let userId  = "372210e5-1dda-41b3-b759-5ff72293b8ff"
 
     // Fail-fast session: 15 s request timeout + no connectivity-waiting, so an
