@@ -85,10 +85,21 @@ struct RideRouteMap: View {
     }
 
     private var segments: [Segment] {
+        // Full rides now arrive complete (2k–6k+ points). Evenly stride down to
+        // ~1500 segments so MapKit stays smooth while the whole A→A loop is kept
+        // (first + last points always included — the shape spans the entire ride).
+        let stride = max(1, waypoints.count / 1500)
+        var sampled: [TelemetryRow] = []
+        var s = 0
+        while s < waypoints.count { sampled.append(waypoints[s]); s += stride }
+        if let last = waypoints.last, sampled.last?.recordedAt != last.recordedAt {
+            sampled.append(last)
+        }
+
         var out: [Segment] = []
         var i = 0
         var prev: (lat: Double, lon: Double, paused: Bool)?
-        for wp in waypoints {
+        for wp in sampled {
             guard let lat = wp.lat, let lon = wp.lon else { continue }
             let paused = wp.is_paused ?? false
             if let p = prev {

@@ -86,8 +86,11 @@ final class SupabaseClient {
         }
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            log("fetchRides failed: \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
-            return []
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            log("fetchRides failed: \(code)")
+            // THROW (don't return []) so callers can keep their last good data on a
+            // transient failure instead of blanking the whole Garage on refresh.
+            throw NSError(domain: "lucidride", code: code)
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601withFractional
@@ -361,23 +364,38 @@ final class SupabaseClient {
 
     /// Fetch the waypoints for a completed ride, ordered ascending by time.
     /// Used by PostRideSummarySheet to render the route map + lean overlay.
-    /// Selects only the fields needed for visualization to keep payload small.
-    func fetchRideTelemetry(activityId: String, limit: Int = 5000) async throws -> [TelemetryRow] {
-        let queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "select",      value: "recorded_at,lat,lon,speed_mps,heart_rate,zone_index,lean_deg_gps,is_paused"),
-            URLQueryItem(name: "activity_id", value: "eq.\(activityId)"),
-            URLQueryItem(name: "lat",         value: "not.is.null"),
-            URLQueryItem(name: "lon",         value: "not.is.null"),
-            URLQueryItem(name: "order",       value: "recorded_at.asc"),
-            URLQueryItem(name: "limit",       value: "\(limit)")
-        ]
-        guard let req = anonRequest(path: "/rest/v1/ride_telemetry", queryItems: queryItems) else {
-            return []
-        }
-        let (data, _) = try await session.data(for: req)
+    ///
+    /// PostgREST hard-caps every response at 1000 rows, so a single request only
+    /// ever returned the FIRST ~17 min of a ride: the route map cut off mid-ride
+    /// and looked like a one-way A→B trip instead of the full A→A loop back home
+    /// (Fabi 2026-07-10). We now page through with `offset` until a short page
+    /// comes back, so the entire track is returned. `limit` is a safety ceiling
+    /// on total points fetched.
+    func fetchRideTelemetry(activityId: String, limit: Int = 20000) async throws -> [TelemetryRow] {
+        let pageSize = 1000
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601withFractional
-        return (try? decoder.decode([TelemetryRow].self, from: data)) ?? []
+        var all: [TelemetryRow] = []
+        var offset = 0
+        while all.count < limit {
+            let queryItems: [URLQueryItem] = [
+                URLQueryItem(name: "select",      value: "recorded_at,lat,lon,speed_mps,heart_rate,zone_index,lean_deg_gps,is_paused"),
+                URLQueryItem(name: "activity_id", value: "eq.\(activityId)"),
+                URLQueryItem(name: "lat",         value: "not.is.null"),
+                URLQueryItem(name: "lon",         value: "not.is.null"),
+                URLQueryItem(name: "order",       value: "recorded_at.asc"),
+                URLQueryItem(name: "offset",      value: "\(offset)"),
+                URLQueryItem(name: "limit",       value: "\(pageSize)")
+            ]
+            guard let req = anonRequest(path: "/rest/v1/ride_telemetry", queryItems: queryItems) else { break }
+            let (data, resp) = try await session.data(for: req)
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { break }
+            let page = (try? decoder.decode([TelemetryRow].self, from: data)) ?? []
+            all.append(contentsOf: page)
+            if page.count < pageSize { break }   // last (short) page — done
+            offset += pageSize
+        }
+        return all
     }
 }
 

@@ -417,13 +417,20 @@ final class GarageModel: ObservableObject {
 
     func load() async {
         loading = true
-        rides = (try? await supabase.fetchRides(limit: 200)) ?? []
+        defer { loading = false }
+        // Only REPLACE the list on a successful fetch. A transient failure used to
+        // return [] and blank the whole Garage on pull-to-refresh ("rides
+        // disappeared again"); now the last good data survives an error.
+        if let fetched = try? await supabase.fetchRides(limit: 200) {
+            rides = fetched
+        }
         if let last = lastRide {
-            lastRideWaypoints = (try? await supabase.fetchRideTelemetry(activityId: last.id, limit: 800)) ?? []
+            if let wp = try? await supabase.fetchRideTelemetry(activityId: last.id) {
+                lastRideWaypoints = wp   // full paginated track — full A→A loop
+            }
         } else {
             lastRideWaypoints = []
         }
-        loading = false
     }
 
     /// (count, distance km, seconds, top km/h) over all completed rides, or just
