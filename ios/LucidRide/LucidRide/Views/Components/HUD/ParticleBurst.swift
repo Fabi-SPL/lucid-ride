@@ -9,7 +9,7 @@ import SwiftUI
 struct ParticleBurst: View {
     let trigger: Int
     var origin: CGPoint = .zero       // .zero = use canvas center
-    var color: Color = DS.Colors.violet
+    var color: Color = DS.Colors.amberAccent
     var count: Int = 28
 
     @State private var particles: [Particle] = []
@@ -52,7 +52,8 @@ struct ParticleBurst: View {
     private func spawn() {
         let cx = origin == .zero ? UIScreen.main.bounds.width / 2 : origin.x
         let cy = origin == .zero ? UIScreen.main.bounds.height / 2 : origin.y
-        let palette: [Color] = [color, DS.Colors.teal, DS.Colors.success, color.opacity(0.7)]
+        // Sparks off hot metal — amber, ember, chrome. No confetti colors.
+        let palette: [Color] = [color, DS.Colors.ember, DS.Colors.chrome, color.opacity(0.7)]
         for _ in 0..<count {
             let angle = Double.random(in: 0..<2 * .pi)
             let speed = Double.random(in: 90...260)

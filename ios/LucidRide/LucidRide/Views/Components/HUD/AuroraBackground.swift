@@ -37,7 +37,7 @@ struct AuroraBackground: View {
                     colors: [
                         Color.black, Color(hex: 0x0A0612), Color.black,
                         Color(hex: 0x0A0612),
-                        DS.Colors.violet.opacity(0.18 * intensity),
+                        DS.Colors.amberAccent.opacity(0.18 * intensity),
                         Color(hex: 0x0A0612),
                         Color.black, Color(hex: 0x0A0612), Color.black
                     ]
@@ -58,8 +58,8 @@ struct AuroraBackground: View {
                     ],
                     colors: [
                         Color.clear,
-                        DS.Colors.teal.opacity(0.06 * intensity),
-                        DS.Colors.teal.opacity(0.05 * intensity),
+                        DS.Colors.cold.opacity(0.06 * intensity),
+                        DS.Colors.cold.opacity(0.05 * intensity),
                         Color.clear
                     ]
                 )

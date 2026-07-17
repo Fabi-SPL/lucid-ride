@@ -84,7 +84,7 @@ struct SettingsView: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(DS.Colors.textPrimary)
                 }
-                .tint(DS.Colors.violet)
+                .tint(DS.Colors.amberAccent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
 
@@ -95,7 +95,7 @@ struct SettingsView: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(DS.Colors.textPrimary)
                 }
-                .tint(DS.Colors.violet)
+                .tint(DS.Colors.amberAccent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
 
@@ -106,7 +106,7 @@ struct SettingsView: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(DS.Colors.textPrimary)
                 }
-                .tint(DS.Colors.violet)
+                .tint(DS.Colors.amberAccent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
 
@@ -118,7 +118,7 @@ struct SettingsView: View {
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(DS.Colors.textPrimary)
                     }
-                    .tint(DS.Colors.violet)
+                    .tint(DS.Colors.amberAccent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }

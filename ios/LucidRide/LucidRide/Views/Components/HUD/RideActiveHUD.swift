@@ -323,7 +323,7 @@ struct RideActiveHUD: View {
                 Text("TAP TO ZERO")
                     .font(.system(size: 7, weight: .bold, design: .rounded))
                     .tracking(0.8)
-                    .foregroundStyle(DS.Colors.violet.opacity(0.75))
+                    .foregroundStyle(DS.Colors.amberAccent.opacity(0.75))
             }
         }
         .contentShape(Rectangle())
@@ -348,12 +348,12 @@ struct RideActiveHUD: View {
             stripDivider
             hudStat(icon: "timer",
                     value: state.elapsedLabel,
-                    unit: "TIME", color: DS.Colors.violet, mono: true)
+                    unit: "TIME", color: DS.Colors.amberAccent, mono: true)
             if leanEnabled {
                 stripDivider
                 hudStat(icon: "arrow.left.and.right",
                         value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
-                        unit: "MAX LEAN", color: DS.Colors.teal)
+                        unit: "MAX LEAN", color: DS.Colors.cold)
             }
             stripDivider
             hudStat(icon: "bolt.fill",
@@ -386,11 +386,11 @@ struct RideActiveHUD: View {
                     unit: "KM", color: DS.Colors.categoryRoute)
             hudStat(icon: "timer",
                     value: state.elapsedLabel,
-                    unit: "TIME", color: DS.Colors.violet, mono: true)
+                    unit: "TIME", color: DS.Colors.amberAccent, mono: true)
             if leanEnabled {
                 hudStat(icon: "arrow.left.and.right",
                         value: "\(Int(state.liveMaxLeanDeg.rounded()))°",
-                        unit: "MAX LEAN", color: DS.Colors.teal)
+                        unit: "MAX LEAN", color: DS.Colors.cold)
             }
             hudStat(icon: "bolt.fill",
                     value: String(format: "%.1fg", state.livePeakG),

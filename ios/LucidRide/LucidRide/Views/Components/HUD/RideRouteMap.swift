@@ -120,13 +120,13 @@ struct RideRouteMap: View {
             return zoneColor(wp.zone_index ?? -1)
         case .lean:
             let lean = abs(wp.lean_deg_gps ?? 0)
-            if lean < 5  { return DS.Colors.teal }
+            if lean < 5  { return DS.Colors.cold }
             if lean < 15 { return DS.Colors.success }
             if lean < 30 { return DS.Colors.warning }
             return DS.Colors.danger
         case .speed:
             let kmh = (wp.speed_mps ?? 0) * 3.6
-            if kmh < 30  { return DS.Colors.teal }
+            if kmh < 30  { return DS.Colors.cold }
             if kmh < 70  { return DS.Colors.success }
             if kmh < 110 { return DS.Colors.warning }
             return DS.Colors.danger
@@ -135,7 +135,7 @@ struct RideRouteMap: View {
 
     private func zoneColor(_ i: Int) -> Color {
         switch i {
-        case 0: return DS.Colors.teal
+        case 0: return DS.Colors.cold
         case 1: return DS.Colors.success
         case 2: return DS.Colors.warning
         case 3: return DS.Colors.danger

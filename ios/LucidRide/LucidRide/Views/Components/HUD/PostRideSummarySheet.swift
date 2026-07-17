@@ -32,7 +32,7 @@ struct PostRideSummarySheet: View {
                         if loading {
                             ProgressView()
                                 .progressViewStyle(.circular)
-                                .tint(DS.Colors.violet)
+                                .tint(DS.Colors.amberAccent)
                                 .frame(height: 200)
                         } else if let ride {
                             RideRouteMap(waypoints: waypoints)
@@ -106,8 +106,9 @@ struct PostRideSummarySheet: View {
 
             // Effort pill — semantic label from zone breakdown
             HStack(spacing: 6) {
-                Text(effort.emoji)
-                    .font(.system(size: 16))
+                Image(systemName: effort.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(effort.color)
                 Text(effort.label.uppercased())
                     .font(.system(size: 11, weight: .heavy, design: .rounded))
                     .tracking(1.4)
@@ -142,8 +143,8 @@ struct PostRideSummarySheet: View {
 
         LazyVGrid(columns: cols, spacing: 1) {
             statCell(value: dur,        unit: "Duration",   icon: "clock.fill",            tint: DS.Colors.textPrimary)
-            statCell(value: topSpd,     unit: "km/h top",   icon: "gauge.with.dots.needle.bottom.50percent", tint: DS.Colors.violet)
-            statCell(value: elev,       unit: "m elev",     icon: "mountain.2.fill",       tint: DS.Colors.teal)
+            statCell(value: topSpd,     unit: "km/h top",   icon: "gauge.with.dots.needle.bottom.50percent", tint: DS.Colors.amberAccent)
+            statCell(value: elev,       unit: "m elev",     icon: "mountain.2.fill",       tint: DS.Colors.cold)
             statCell(value: avgHR,      unit: "bpm avg",    icon: "heart.fill",            tint: DS.Colors.danger)
         }
         .background(Color.white.opacity(0.025))
@@ -213,7 +214,7 @@ struct PostRideSummarySheet: View {
                 if showZones {
                     Divider().background(DS.Colors.border).padding(.horizontal, 14)
                     VStack(spacing: 6) {
-                        zoneRow(index: 0, label: "Warm-Up",   secs: zs["0"] ?? 0, total: total, color: DS.Colors.teal)
+                        zoneRow(index: 0, label: "Warm-Up",   secs: zs["0"] ?? 0, total: total, color: DS.Colors.cold)
                         zoneRow(index: 1, label: "Aerobic",   secs: zs["1"] ?? 0, total: total, color: DS.Colors.success)
                         zoneRow(index: 2, label: "Threshold", secs: zs["2"] ?? 0, total: total, color: DS.Colors.warning)
                         zoneRow(index: 3, label: "Redline",   secs: zs["3"] ?? 0, total: total, color: DS.Colors.danger)
@@ -271,7 +272,7 @@ struct PostRideSummarySheet: View {
 
     private func zoneColor(_ i: Int) -> Color {
         switch i {
-        case 0: return DS.Colors.teal
+        case 0: return DS.Colors.cold
         case 1: return DS.Colors.success
         case 2: return DS.Colors.warning
         case 3: return DS.Colors.danger
@@ -303,7 +304,7 @@ struct PostRideSummarySheet: View {
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(
                         .linearGradient(
-                            colors: [DS.Colors.teal.opacity(0.25), DS.Colors.warning.opacity(0.40), DS.Colors.danger.opacity(0.55)],
+                            colors: [DS.Colors.cold.opacity(0.25), DS.Colors.warning.opacity(0.40), DS.Colors.danger.opacity(0.55)],
                             startPoint: .bottom, endPoint: .top
                         )
                     )
@@ -342,7 +343,7 @@ struct PostRideSummarySheet: View {
                     imuTile(value: String(format: "%.0f°", lean),
                             label: "MAX LEAN",
                             icon: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
-                            tint: DS.Colors.violet)
+                            tint: DS.Colors.amberAccent)
                 }
                 imuTile(value: String(format: "%.2fG", accel),
                         label: "PEAK ACCEL",

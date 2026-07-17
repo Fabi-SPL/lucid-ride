@@ -115,7 +115,7 @@ struct HomeView: View {
                     Text("LAST RIDE")
                         .font(.system(size: 10, weight: .heavy, design: .rounded))
                         .tracking(1.3)
-                        .foregroundStyle(DS.Colors.violet)
+                        .foregroundStyle(DS.Colors.amberAccent)
                     Text("· " + ride.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                         .font(.system(size: 10, weight: .heavy, design: .rounded))
                         .tracking(0.5)
@@ -135,7 +135,9 @@ struct HomeView: View {
                 if !model.lastRoutePoints.isEmpty {
                     MiniRouteShape(points: model.lastRoutePoints)
                         .stroke(
-                            LinearGradient(colors: [DS.Colors.teal, DS.Colors.violet], startPoint: .leading, endPoint: .trailing),
+                            // Heat ramp along the route — cold start, ember peak
+                            LinearGradient(colors: [DS.Colors.cold, DS.Colors.amberAccent, DS.Colors.ember],
+                                           startPoint: .leading, endPoint: .trailing),
                             style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                         )
                         .frame(height: 52)
@@ -155,13 +157,13 @@ struct HomeView: View {
             .padding(17)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(LinearGradient(colors: [DS.Colors.violet.opacity(0.16), DS.Colors.teal.opacity(0.05)],
+                    .fill(LinearGradient(colors: [DS.Colors.amberAccent.opacity(0.10), Color.clear],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
             )
             .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.ultraThinMaterial))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(DS.Colors.borderViolet, lineWidth: 0.5))
-            .shadow(color: DS.Colors.violet.opacity(0.22), radius: 22, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.35), radius: 22, x: 0, y: 10)
         }
         .buttonStyle(.plain)
         .padding(.top, 6)
@@ -205,9 +207,9 @@ struct HomeView: View {
         return VStack(alignment: .leading, spacing: 0) {
             sectionHeader("THIS MONTH")
             HStack(spacing: 9) {
-                statTile("\(m.count)", "", "RIDES", DS.Colors.violet)
+                statTile("\(m.count)", "", "RIDES", DS.Colors.amberAccent)
                 statTile(String(format: "%.0f", m.km), "km", "DISTANCE", DS.Colors.textPrimary)
-                statTile(model.hmLabel(m.seconds), "", "TIME", DS.Colors.teal)
+                statTile(model.hmLabel(m.seconds), "", "TIME", DS.Colors.cold)
             }
         }
     }
@@ -292,7 +294,9 @@ struct HomeView: View {
                 }
                 .frame(width: 48, alignment: .leading)
 
-                Text(effort.emoji).font(.system(size: 15))
+                Image(systemName: effort.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(effort.color)
 
                 Text(effort.label)
                     .font(.system(size: 11, weight: .heavy, design: .rounded))
@@ -346,7 +350,7 @@ struct HomeView: View {
     private var loadingState: some View {
         ProgressView()
             .progressViewStyle(.circular)
-            .tint(DS.Colors.violet)
+            .tint(DS.Colors.amberAccent)
             .frame(maxWidth: .infinity)
             .frame(height: 260)
     }
@@ -382,11 +386,11 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 17)
             .background(
-                Capsule().fill(LinearGradient(colors: [DS.Colors.violet, Color(hex: 0x7C5CD6)],
+                Capsule().fill(LinearGradient(colors: [DS.Colors.amberAccent, DS.Colors.ember],
                                               startPoint: .topLeading, endPoint: .bottomTrailing))
                     .opacity(starting ? 0.5 : 1)
             )
-            .shadow(color: DS.Colors.violet.opacity(0.5), radius: 16, x: 0, y: 8)
+            .shadow(color: DS.Colors.amberAccent.opacity(0.35), radius: 16, x: 0, y: 8)
         }
         .buttonStyle(.plain)
         .disabled(starting)

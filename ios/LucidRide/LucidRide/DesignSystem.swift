@@ -33,13 +33,15 @@ enum DS {
         static let pill: CGFloat = 100
     }
 
-    // MARK: - Colors (Lucid Brand — adaptive light/dark)
+    // MARK: - Colors (Forged Metal — LucidRide's own identity, no Lucid violet/teal)
+    // Concept: metal heating up. Cold steel at cruise, amber under load,
+    // ember at redline. Chrome = the headlight white from the app icon.
     enum Colors {
-        // Backgrounds
+        // Backgrounds — near-black ink with a faint cool graphite bias
         static let bg = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.031, green: 0.031, blue: 0.063, alpha: 1)    // #080810
-                : UIColor(red: 0.961, green: 0.941, blue: 1.0, alpha: 1)      // #f5f0ff
+                ? UIColor(red: 0.039, green: 0.043, blue: 0.051, alpha: 1)    // #0A0B0D ink
+                : UIColor(red: 0.949, green: 0.953, blue: 0.961, alpha: 1)    // #F2F3F5 cool paper
         })
         static let surface = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
@@ -57,39 +59,59 @@ enum DS {
                 : UIColor(white: 1.0, alpha: 0.90)
         })
 
-        // Text
+        // Text — chrome/steel neutrals, zero color bias
         static let textPrimary = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.91, green: 0.89, blue: 0.94, alpha: 1)       // #e8e4ef
-                : UIColor(red: 0.10, green: 0.09, blue: 0.15, alpha: 1)       // #1a1625
+                ? UIColor(red: 0.933, green: 0.949, blue: 0.965, alpha: 1)    // #EEF2F6 chrome
+                : UIColor(red: 0.086, green: 0.094, blue: 0.110, alpha: 1)    // #16181C
         })
         static let textSecondary = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.69, green: 0.68, blue: 0.75, alpha: 1)       // #b0adc0
-                : UIColor(red: 0.23, green: 0.22, blue: 0.35, alpha: 1)       // #3a3858
+                ? UIColor(red: 0.545, green: 0.576, blue: 0.612, alpha: 1)    // #8B939C steel
+                : UIColor(red: 0.290, green: 0.314, blue: 0.345, alpha: 1)    // #4A5058
         })
         static let textMuted = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.42, green: 0.41, blue: 0.50, alpha: 1)       // #6b6880
-                : UIColor(red: 0.42, green: 0.41, blue: 0.53, alpha: 1)       // #6b6888
+                ? UIColor(red: 0.353, green: 0.380, blue: 0.416, alpha: 1)    // #5A616A
+                : UIColor(red: 0.431, green: 0.463, blue: 0.498, alpha: 1)    // #6E767F
         })
         static let textFaint = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.29, green: 0.28, blue: 0.38, alpha: 1)       // #4a4760
-                : UIColor(red: 0.60, green: 0.60, blue: 0.66, alpha: 1)       // #9a98a8
+                ? UIColor(red: 0.227, green: 0.251, blue: 0.282, alpha: 1)    // #3A4048
+                : UIColor(red: 0.604, green: 0.631, blue: 0.663, alpha: 1)    // #9AA1A9
         })
 
-        // Accent (adaptive violet/teal)
-        static let violet = Color(UIColor { tc in
+        // ── Forged-metal accents ─────────────────────────────
+        /// Signature accent — amber, metal under load
+        static let amberAccent = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.545, green: 0.486, blue: 0.965, alpha: 1)    // #8B7CF6
-                : UIColor(red: 0.486, green: 0.361, blue: 0.749, alpha: 1)    // #7c5cbf
+                ? UIColor(red: 0.910, green: 0.541, blue: 0.220, alpha: 1)    // #E88A38
+                : UIColor(red: 0.788, green: 0.435, blue: 0.118, alpha: 1)    // #C96F1E
         })
-        static let teal = Color(UIColor { tc in
+        /// Redline — ember, metal at its limit
+        static let ember = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.310, green: 0.820, blue: 0.773, alpha: 1)    // #4FD1C5
-                : UIColor(red: 0.051, green: 0.580, blue: 0.533, alpha: 1)    // #0d9488
+                ? UIColor(red: 1.0, green: 0.353, blue: 0.220, alpha: 1)      // #FF5A38
+                : UIColor(red: 0.878, green: 0.243, blue: 0.125, alpha: 1)    // #E03E20
         })
+        /// Cold steel — cruising, no load
+        static let cold = Color(UIColor { tc in
+            tc.userInterfaceStyle == .dark
+                ? UIColor(red: 0.718, green: 0.753, blue: 0.788, alpha: 1)    // #B7C0C9
+                : UIColor(red: 0.373, green: 0.420, blue: 0.463, alpha: 1)    // #5F6B76
+        })
+        /// Chrome — the headlight white, primary emphasis
+        static let chrome = Color(UIColor { tc in
+            tc.userInterfaceStyle == .dark
+                ? UIColor(red: 0.933, green: 0.949, blue: 0.965, alpha: 1)    // #EEF2F6
+                : UIColor(red: 0.086, green: 0.094, blue: 0.110, alpha: 1)    // #16181C
+        })
+
+        // Legacy names — kept so every old call site lands on the new palette.
+        // `violet` renders amber, `teal` renders cold steel. New code uses the
+        // forged-metal names above.
+        static let violet = amberAccent
+        static let teal = cold
 
         // Semantic (adaptive)
         static let success = Color(UIColor { tc in
@@ -97,27 +119,12 @@ enum DS {
                 ? UIColor(red: 0.063, green: 0.725, blue: 0.506, alpha: 1)    // #10b981
                 : UIColor(red: 0.020, green: 0.588, blue: 0.412, alpha: 1)    // #059669
         })
-        static let danger = Color(UIColor { tc in
-            tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.937, green: 0.267, blue: 0.267, alpha: 1)    // #ef4444
-                : UIColor(red: 0.863, green: 0.149, blue: 0.149, alpha: 1)    // #dc2626
-        })
-        static let warning = Color(UIColor { tc in
-            tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.984, green: 0.749, blue: 0.141, alpha: 1)    // #fbbf24
-                : UIColor(red: 0.851, green: 0.467, blue: 0.024, alpha: 1)    // #d97706
-        })
+        // danger/warning fold into the heat ramp — ember is the danger color
+        static let danger = ember
+        static let warning = amberAccent
 
-        static let pink = Color(UIColor { tc in
-            tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.925, green: 0.282, blue: 0.600, alpha: 1)    // #EC4899
-                : UIColor(red: 0.780, green: 0.157, blue: 0.478, alpha: 1)    // #c7287a
-        })
-        static let amber = Color(UIColor { tc in
-            tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.965, green: 0.624, blue: 0.044, alpha: 1)    // #F59E0B
-                : UIColor(red: 0.851, green: 0.467, blue: 0.024, alpha: 1)    // #d97706
-        })
+        static let pink = ember
+        static let amber = amberAccent
 
         // Borders (adaptive)
         static let border = Color(UIColor { tc in
@@ -127,11 +134,11 @@ enum DS {
         })
         static let borderStrong = Color(UIColor { tc in
             tc.userInterfaceStyle == .dark
-                ? UIColor(red: 0.545, green: 0.361, blue: 0.965, alpha: 0.15)
-                : UIColor(red: 0.486, green: 0.361, blue: 0.749, alpha: 0.15)
+                ? UIColor(red: 0.910, green: 0.541, blue: 0.220, alpha: 0.15)
+                : UIColor(red: 0.788, green: 0.435, blue: 0.118, alpha: 0.15)
         })
-        static let borderViolet = Color(hex: 0x8B7CF6).opacity(0.18)
-        static let borderTeal = Color(hex: 0x4FD1C5).opacity(0.15)
+        static let borderViolet = Color(hex: 0xE88A38).opacity(0.18)
+        static let borderTeal = Color(hex: 0xB7C0C9).opacity(0.15)
 
         // Recovery zones
         static func recoveryColor(_ score: Double) -> Color {
@@ -147,9 +154,9 @@ enum DS {
         }
 
         static func strainColor(_ score: Double) -> Color {
-            if score < 8 { return teal }
-            if score < 14 { return warning }
-            return danger
+            if score < 8 { return cold }
+            if score < 14 { return amberAccent }
+            return ember
         }
 
         static func bodyStateColor(_ hrv: Double) -> Color {
@@ -162,12 +169,14 @@ enum DS {
         }
 
         static func zoneColor(_ zone: Int) -> Color {
+            // Heat ramp — cold steel → warming → amber → ember. No green:
+            // effort reads as temperature, matching the forged-metal identity.
             switch zone {
             case 0: return textMuted
-            case 1: return teal
-            case 2: return success
-            case 3: return warning
-            case 4: return danger
+            case 1: return cold
+            case 2: return Color(hex: 0xD2A26B)   // warming steel, cold→amber midpoint
+            case 3: return amberAccent
+            case 4: return ember
             default: return textMuted
             }
         }
@@ -177,36 +186,36 @@ enum DS {
             // Below 25° = casual, 25-40° = sporty, 40-50° = aggressive,
             // >50° = race-track territory (or you're crashing).
             let abs = Swift.abs(degrees)
-            if abs < 25 { return teal }
-            if abs < 40 { return success }
-            if abs < 50 { return warning }
-            return danger
+            if abs < 25 { return cold }
+            if abs < 40 { return Color(hex: 0xD2A26B) }
+            if abs < 50 { return amberAccent }
+            return ember
         }
 
-        // Gradient
+        // Gradient — the heat ramp, amber into ember
         static let brandGradient = LinearGradient(
-            colors: [violet, teal],
+            colors: [amberAccent, ember],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
         static let heroGradient = LinearGradient(
-            colors: [violet.opacity(0.12), teal.opacity(0.06)],
+            colors: [amberAccent.opacity(0.10), Color.clear],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
         // Status glow halos (used by StatusGlow modifier)
-        static let glowViolet  = violet.opacity(0.35)
+        static let glowViolet  = amberAccent.opacity(0.35)
         static let glowSuccess = success.opacity(0.30)
-        static let glowAmber   = warning.opacity(0.30)
-        static let glowDanger  = danger.opacity(0.30)
+        static let glowAmber   = amberAccent.opacity(0.30)
+        static let glowDanger  = ember.opacity(0.30)
 
         // Category dots (principle #5) — LucidRide tunes these to ride domains
-        static let categoryBody    = violet      // body state / HRV / strain
-        static let categoryRide    = teal        // ride telemetry (lean / GPS / IMU)
-        static let categoryBike    = amber       // bike / mechanical (fuel, tire, service)
-        static let categoryRoute   = Color(hex: 0xA78BFA)  // route / location
+        static let categoryBody    = chrome      // body state / HRV / strain
+        static let categoryRide    = amberAccent // ride telemetry (lean / GPS / IMU)
+        static let categoryBike    = cold        // bike / mechanical (fuel, tire, service)
+        static let categoryRoute   = Color(hex: 0xD2A26B)  // route / location
         static let categorySession = success     // active session / streaks
     }
 
@@ -252,7 +261,7 @@ enum DS {
 
     // MARK: - Glow Colors (status halos)
     enum Glow {
-        static let violet = DS.Colors.violet.opacity(0.35)
+        static let violet = DS.Colors.amberAccent.opacity(0.35)
         static let success = DS.Colors.success.opacity(0.30)
         static let amber = DS.Colors.amber.opacity(0.30)
         static let danger = DS.Colors.danger.opacity(0.30)
@@ -264,10 +273,10 @@ enum DS {
 
         var color: Color {
             switch self {
-            case .body:    return DS.Colors.violet
-            case .ride:    return DS.Colors.teal
-            case .bike:    return DS.Colors.amber
-            case .route:   return Color(hex: 0xA78BFA)
+            case .body:    return DS.Colors.chrome
+            case .ride:    return DS.Colors.amberAccent
+            case .bike:    return DS.Colors.cold
+            case .route:   return Color(hex: 0xD2A26B)
             case .session: return DS.Colors.success
             }
         }
@@ -298,131 +307,55 @@ extension Color {
     }
 }
 
-// MARK: - Mesh Gradient Background (iOS 18+ MeshGradient, animated)
+// MARK: - Background (forged metal — solid ink, one headlight bloom)
+//
+// The old animated purple mesh is retired. An instrument cluster sits on
+// solid near-black; the only light is a faint amber bloom at the top edge
+// (the headlight) and a whisper of ember at the bottom. Static — zero
+// TimelineView cost, nothing fighting the telemetry for attention.
+// Struct keeps its old name so every view's background call still works.
 
 struct MeshGradientBackground: View {
     @Environment(\.colorScheme) var colorScheme
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
-
-    // Animate mesh control points for ambient life (20s loop)
-    @State private var phase: Double = 0
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 99999 : 1.0 / 12.0)) { context in
-            let t = reduceMotion ? 0.0 : context.date.timeIntervalSinceReferenceDate
-                .truncatingRemainder(dividingBy: 20.0) / 20.0
-            let drift = Float(sin(t * .pi * 2) * 0.04)
-            let drift2 = Float(cos(t * .pi * 2) * 0.05)
+        ZStack {
+            DS.Colors.bg.ignoresSafeArea()
 
-            ZStack {
-                DS.Colors.bg.ignoresSafeArea()
-
-                if colorScheme == .dark {
-                    // PURPLE-ONLY (no teal). Soft violet base anchors + two
-                    // drifting violet "clouds" at different scales — gives the
-                    // background organic depth that glass surfaces actually
-                    // refract against. Uniform black = flat gray cards.
-                    //
-                    // Anchors are deep purple-black (#0A0612 / #100A1F) instead
-                    // of pure black so the dark mode reads as "lucid violet"
-                    // not "void". Less harsh on the eyes at night.
-                    MeshGradient(
-                        width: 3, height: 3,
-                        points: [
-                            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
-                            [0.0, 0.5], [0.32 + drift, 0.22 + drift * 0.5], [1.0, 0.5],
-                            [0.0, 1.0], [0.68 - drift, 0.78 - drift * 0.5], [1.0, 1.0]
-                        ],
-                        colors: [
-                            Color(hex: 0x0A0612), Color(hex: 0x0F0A1F), Color(hex: 0x0A0612),
-                            Color(hex: 0x0F0A1F), DS.Colors.violet.opacity(0.32), Color(hex: 0x0F0A1F),
-                            Color(hex: 0x0A0612), Color(hex: 0x12082A).opacity(0.95), Color(hex: 0x0A0612)
-                        ]
+            if colorScheme == .dark {
+                RadialGradient(
+                    colors: [DS.Colors.amberAccent.opacity(0.09), .clear],
+                    center: .init(x: 0.5, y: -0.15),
+                    startRadius: 0, endRadius: 480
+                )
+                .ignoresSafeArea()
+                RadialGradient(
+                    colors: [DS.Colors.ember.opacity(0.04), .clear],
+                    center: .init(x: 0.5, y: 1.15),
+                    startRadius: 0, endRadius: 420
+                )
+                .ignoresSafeArea()
+                // Brushed-metal hairline along the very top edge
+                VStack {
+                    LinearGradient(
+                        colors: [.clear, DS.Colors.chrome.opacity(0.18), .clear],
+                        startPoint: .leading, endPoint: .trailing
                     )
-                    .ignoresSafeArea()
-                    // Second violet cloud — slower drift, different position,
-                    // larger soft bloom. Stacked via .screen blend so it
-                    // brightens rather than replaces.
-                    MeshGradient(
-                        width: 2, height: 2,
-                        points: [
-                            [0.15 + drift2 * 0.5, 0.30 + drift2 * 0.3],
-                            [0.85, 0.20],
-                            [0.20, 0.75 - drift2 * 0.3],
-                            [0.80 - drift2 * 0.5, 0.85]
-                        ],
-                        colors: [
-                            DS.Colors.violet.opacity(0.20),
-                            Color.clear,
-                            Color.clear,
-                            DS.Colors.violet.opacity(0.16)
-                        ]
-                    )
-                    .ignoresSafeArea()
-                    .blendMode(.screen)
-                    // Subtle warmth — soft pink-violet bloom in the center,
-                    // pulses gently with drift. Adds painterly feel without
-                    // introducing teal.
-                    MeshGradient(
-                        width: 2, height: 2,
-                        points: [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-                        colors: [
-                            Color(hex: 0xB57BFF).opacity(0.00),
-                            Color(hex: 0xB57BFF).opacity(0.00),
-                            Color(hex: 0xB57BFF).opacity(0.00),
-                            Color(hex: 0xB57BFF).opacity(0.06 + Double(abs(drift)) * 0.2)
-                        ]
-                    )
-                    .ignoresSafeArea()
-                    .blendMode(.screen)
-                } else {
-                    // Light mode — purple-only. Darker lavender than before
-                    // (#D6C5E8 base) so the background actually exists visually
-                    // instead of disappearing into white. Two cloud layers
-                    // composited via opacity (NOT .multiply — that was causing
-                    // Color.clear corners to wipe the base back to white).
-                    MeshGradient(
-                        width: 3, height: 3,
-                        points: [
-                            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
-                            [0.0, 0.5], [0.25 + drift, 0.25 + drift * 0.5], [1.0, 0.5],
-                            [0.0, 1.0], [0.75 - drift, 0.65 - drift * 0.5], [1.0, 1.0]
-                        ],
-                        colors: [
-                            Color(hex: 0xD6C5E8), Color(hex: 0xDBC9EC), Color(hex: 0xD6C5E8),
-                            Color(hex: 0xDBC9EC), DS.Colors.violet.opacity(0.42), Color(hex: 0xDBC9EC),
-                            Color(hex: 0xD0BEE3), Color(hex: 0xC9B5DD), Color(hex: 0xD0BEE3)
-                        ]
-                    )
-                    .ignoresSafeArea()
-                    // Second cloud — uses lavender base instead of Color.clear
-                    // for the non-bloom corners so layering doesn't clip
-                    // through to the underlying DS.Colors.bg (near-white).
-                    // Lower overall opacity instead of blend mode tricks.
-                    MeshGradient(
-                        width: 2, height: 2,
-                        points: [
-                            [0.20 + drift2 * 0.4, 0.30 + drift2 * 0.3],
-                            [0.85, 0.18],
-                            [0.18, 0.78 - drift2 * 0.3],
-                            [0.82 - drift2 * 0.4, 0.85]
-                        ],
-                        colors: [
-                            DS.Colors.violet.opacity(0.35),
-                            Color(hex: 0xD6C5E8),
-                            Color(hex: 0xD6C5E8),
-                            DS.Colors.violet.opacity(0.28)
-                        ]
-                    )
-                    .opacity(0.55)
-                    .ignoresSafeArea()
+                    .frame(height: 1)
+                    Spacer()
                 }
-
-                // Dot grid overlay — gives glass cards something to refract
-                // (uniform mesh = flat-looking glass). 24pt spacing, 1.5pt dots.
-                // Visible but minimalist — Apple Settings background pattern.
-                DotGridOverlay()
+                .ignoresSafeArea()
+            } else {
+                RadialGradient(
+                    colors: [DS.Colors.amberAccent.opacity(0.07), .clear],
+                    center: .init(x: 0.5, y: -0.15),
+                    startRadius: 0, endRadius: 480
+                )
+                .ignoresSafeArea()
             }
+
+            // Dot grid overlay — gives glass cards something to refract.
+            DotGridOverlay()
         }
     }
 }
@@ -439,11 +372,10 @@ struct DotGridOverlay: View {
 
     var body: some View {
         Canvas { context, size in
-            // Tinted toward violet (not pure white/black) so the grid
-            // integrates with the purple-only palette instead of fighting it.
+            // Neutral steel tint — reads as machined texture, not decoration.
             let color: Color = colorScheme == .dark
-                ? Color(hex: 0xC0A8E8).opacity(0.10)
-                : Color(hex: 0x4A3870).opacity(0.12)
+                ? Color(hex: 0x8B939C).opacity(0.08)
+                : Color(hex: 0x4A5058).opacity(0.10)
             let cols = Int(size.width / spacing) + 2
             let rows = Int(size.height / spacing) + 2
             for row in 0..<rows {
@@ -480,7 +412,7 @@ struct GlassDefault: ViewModifier {
     func body(content: Content) -> some View {
         content
             .glassEffect(
-                .regular.tint(DS.Colors.violet.opacity(0.04)).interactive(),
+                .regular.tint(DS.Colors.chrome.opacity(0.03)).interactive(),
                 in: .rect(cornerRadius: DS.Radius.lg)
             )
             .overlay(alignment: .top) {
@@ -503,19 +435,18 @@ struct GlassHero: ViewModifier {
     func body(content: Content) -> some View {
         content
             .glassEffect(
-                .regular.tint(DS.Colors.violet.opacity(0.08)),
+                .regular.tint(DS.Colors.amberAccent.opacity(0.05)),
                 in: .rect(cornerRadius: DS.Radius.xl)
             )
             .overlay(
                 LinearGradient(
-                    colors: [DS.Colors.violet.opacity(0.06), DS.Colors.teal.opacity(0.03)],
+                    colors: [DS.Colors.amberAccent.opacity(0.05), Color.clear],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 )
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous))
                 .allowsHitTesting(false)
             )
-            .overlay(SpecularShimmer())
-            .shadow(color: DS.Colors.violet.opacity(0.18), radius: 24, x: 0, y: 8)
+            .shadow(color: Color.black.opacity(0.35), radius: 24, x: 0, y: 8)
     }
 }
 
@@ -570,7 +501,7 @@ extension View {
 struct GlassCard: ViewModifier {
     var padding: CGFloat = DS.Spacing.md
     var radius: CGFloat = DS.Radius.lg
-    var tint: Color = DS.Colors.violet
+    var tint: Color = DS.Colors.amberAccent
     var tintOpacity: Double = 0.08
 
     func body(content: Content) -> some View {
@@ -593,7 +524,7 @@ struct GlassCard: ViewModifier {
 }
 
 struct HeroCard: ViewModifier {
-    var color: Color = DS.Colors.violet
+    var color: Color = DS.Colors.amberAccent
 
     func body(content: Content) -> some View {
         content
@@ -605,12 +536,11 @@ struct HeroCard: ViewModifier {
             .background(
                 RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous)
                     .fill(LinearGradient(
-                        colors: [color.opacity(0.12), DS.Colors.teal.opacity(0.06)],
+                        colors: [color.opacity(0.10), Color.clear],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     ))
             )
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous))
-            .overlay(SpecularShimmer())
             .overlay(
                 RoundedRectangle(cornerRadius: DS.Radius.xl, style: .continuous)
                     .stroke(color.opacity(0.15), lineWidth: 0.5)
@@ -662,12 +592,12 @@ extension View {
     ) -> some View {
         modifier(GlassCard(
             padding: padding,
-            tint: tint ?? DS.Colors.violet,
+            tint: tint ?? DS.Colors.amberAccent,
             tintOpacity: tint != nil ? 0.08 : 0.04
         ))
     }
 
-    func heroCard(color: Color = DS.Colors.violet) -> some View {
+    func heroCard(color: Color = DS.Colors.amberAccent) -> some View {
         modifier(HeroCard(color: color))
     }
 }
@@ -677,7 +607,7 @@ extension View {
 struct SectionHeader: View {
     var icon: String = ""
     let title: String
-    var iconColor: Color = DS.Colors.violet
+    var iconColor: Color = DS.Colors.amberAccent
     var trailing: String? = nil
 
     var body: some View {
@@ -834,7 +764,7 @@ struct AlertBanner: View {
 struct GlassStatusPill: View {
     let icon: String
     let text: String
-    var color: Color = DS.Colors.violet
+    var color: Color = DS.Colors.amberAccent
 
     var body: some View {
         HStack(spacing: 6) {
@@ -862,7 +792,7 @@ struct MetricTile: View {
     let label: String
     let value: String
     var unit: String = ""
-    var color: Color = DS.Colors.violet
+    var color: Color = DS.Colors.amberAccent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -948,7 +878,7 @@ struct TwoToneHeadline: View {
 // MARK: - Glass Action Button Style
 
 struct GlassActionButtonStyle: ButtonStyle {
-    var tint: Color = DS.Colors.violet
+    var tint: Color = DS.Colors.amberAccent
     var filled: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {

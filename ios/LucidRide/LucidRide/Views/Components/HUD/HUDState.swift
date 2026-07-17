@@ -133,11 +133,13 @@ final class HUDState: ObservableObject {
     }
 
     static func zoneColor(for hr: Double?) -> Color {
+        // Heat ramp — cold steel → warming → amber → ember (no green;
+        // effort reads as metal temperature, matching the app identity).
         guard let hr else { return DS.Colors.textMuted }
-        if hr < 110 { return DS.Colors.teal }
-        if hr < 140 { return DS.Colors.success }
-        if hr < 165 { return DS.Colors.warning }
-        return DS.Colors.danger
+        if hr < 110 { return DS.Colors.cold }
+        if hr < 140 { return Color(hex: 0xD2A26B) }
+        if hr < 165 { return DS.Colors.amberAccent }
+        return DS.Colors.ember
     }
 
     static func zoneLabel(for hr: Double?) -> String {
@@ -162,19 +164,21 @@ final class HUDState: ObservableObject {
     /// Translates a zone-time distribution into a single semantic effort label
     /// (WHOOP-style — replaces zone table for ADHD-friendly post-ride read).
     /// Keys are "0".."3" matching `zoneIndex` buckets, values are seconds.
-    static func effortLabel(from zoneSeconds: [String: Double]) -> (label: String, emoji: String, color: Color) {
+    /// `symbol` is an SF Symbol name — emojis are banned from the UI.
+    static func effortLabel(from zoneSeconds: [String: Double]) -> (label: String, symbol: String, color: Color) {
         let total = zoneSeconds.values.reduce(0, +)
-        guard total > 0 else { return ("No data", "—", DS.Colors.textMuted) }
+        guard total > 0 else { return ("No data", "minus", DS.Colors.textMuted) }
         let z0 = (zoneSeconds["0"] ?? 0) / total
         let z1 = (zoneSeconds["1"] ?? 0) / total
         let z2 = (zoneSeconds["2"] ?? 0) / total
         let z3 = (zoneSeconds["3"] ?? 0) / total
 
         // Highest-band first — REDLINE-heavy beats anything else.
-        if z3 > 0.20 { return ("All Out",   "🔥", DS.Colors.danger) }
-        if z2 + z3 > 0.30 { return ("Spirited",  "🟠", DS.Colors.warning) }
-        if z1 > 0.50 { return ("Endurance", "🟡", DS.Colors.success) }
-        if z0 > 0.70 { return ("Recovery",  "🟢", DS.Colors.teal) }
-        return ("Mixed", "🟣", DS.Colors.violet)
+        // Colors follow the heat ramp: cold steel → warming → amber → ember.
+        if z3 > 0.20 { return ("All Out",   "flame.fill",        DS.Colors.ember) }
+        if z2 + z3 > 0.30 { return ("Spirited",  "speedometer",       DS.Colors.amberAccent) }
+        if z1 > 0.50 { return ("Endurance", "waveform.path.ecg", Color(hex: 0xD2A26B)) }
+        if z0 > 0.70 { return ("Recovery",  "wind",              DS.Colors.cold) }
+        return ("Mixed", "shuffle", DS.Colors.textSecondary)
     }
 }
