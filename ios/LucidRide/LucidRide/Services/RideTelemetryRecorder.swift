@@ -77,6 +77,19 @@ final class RideTelemetryRecorder: ObservableObject {
     private var maxLean_rad: Double = 0
     private var maxAccelG: Double = 0
     private var maxLeanGps_deg: Double = 0
+
+    // Outlier rejection. A phone on a bike sees GPS jumps and mount vibration; both used
+    // to land in ride metadata verbatim (879 km/h tops, 8.08 g peaks).
+    private static let speedCeiling_mps: Double = 55      // 198 km/h — far above the bike, far below a GPS jump
+    private static let maxAccel_mps2:    Double = 12      // 1.2 g, generous for a 125
+    private static let accelCeiling_g:   Double = 3.0
+    private var lastAcceptedSpeed_mps: Double = 0
+    private var lastSpeedAt: Date? = nil
+    private var rejectedSpeedSamples = 0
+    // Peak G is reported as the SECOND highest per-second maximum. A single vibration
+    // spike is one sample; real hard braking spans several seconds.
+    private var accelTop1: Double = 0
+    private var accelTop2: Double = 0
     private var maxImuLean_deg: Double = 0       // calibrated gravity-based lean peak
     private var leanBaselineDeg: Double? = nil   // gravity angle captured at upright start
     private var lastLocationForDelta: CLLocation?
@@ -211,11 +224,25 @@ final class RideTelemetryRecorder: ObservableObject {
         }
 
         // Speed — effSpeed_mps already falls back to position-delta when CL's
-        // Doppler speed is -1 (walking pace / sparse fixes).
+        // Doppler speed is -1 (walking pace / sparse fixes). That fallback is what
+        // produced 879 km/h all-time tops: one bad fix "moves" you 200 m in a second.
+        // Reject anything past a physical ceiling or implying more than 1.2 g of
+        // acceleration since the last accepted sample; a real top-speed run survives
+        // both, an isolated GPS jump survives neither.
         if recordingActive, let s = effSpeed_mps, s >= 0 {
-            maxSpeed_mps = max(maxSpeed_mps, s)
-            speedSum += s
-            speedCount += 1
+            let dt = lastSpeedAt.map { now.timeIntervalSince($0) } ?? 1
+            let window = max(dt, 0.5)
+            let plausible = s <= Self.speedCeiling_mps
+                && (speedCount == 0 || abs(s - lastAcceptedSpeed_mps) <= Self.maxAccel_mps2 * window)
+            if plausible {
+                maxSpeed_mps = max(maxSpeed_mps, s)
+                speedSum += s
+                speedCount += 1
+                lastAcceptedSpeed_mps = s
+            } else {
+                rejectedSpeedSamples += 1
+            }
+            lastSpeedAt = now
         }
 
         // Elevation gain/loss — prefer barometric (smoother than GPS altitude).
@@ -249,7 +276,12 @@ final class RideTelemetryRecorder: ObservableObject {
         let leanOn = UserDefaults.standard.bool(forKey: "lucidride.leanEnabled")
         if recordingActive {
             if leanOn, motionStats.maxAbsRoll_rad.isFinite { maxLean_rad = max(maxLean_rad, motionStats.maxAbsRoll_rad) }
-            if motionStats.maxAccelG.isFinite { maxAccelG = max(maxAccelG, motionStats.maxAccelG) }
+            let g = motionStats.maxAccelG
+            if g.isFinite, g <= Self.accelCeiling_g {
+                if g > accelTop1 { accelTop2 = accelTop1; accelTop1 = g }
+                else if g > accelTop2 { accelTop2 = g }
+                maxAccelG = accelTop2
+            }
         }
 
         // GPS-derived lean angle (RaceChrono/AiM formula: atan(v² / (r·g)) with
@@ -462,13 +494,20 @@ final class RideTelemetryRecorder: ObservableObject {
             "avg_speed_kmh":      avgSpeed_mps * 3.6,
             "elev_gain_m":        elevationGain_m,
             "elev_loss_m":        elevationLoss_m,
-            "max_lean_deg":       maxImuLean_deg,                      // calibrated gravity-based IMU lean
-            "max_lean_deg_gps":   maxLeanGps_deg,                      // GPS path-curvature lean
             "max_accel_g":        maxAccelG,
             "waypoints":          totalWaypoints,
             "paused_seconds":     pausedSeconds,
             "zone_seconds":       zoneSeconds.reduce(into: [String: Double]()) { $0["\($1.key)"] = $1.value }
         ]
+        // Lean is deliberately absent unless the phone-IMU experiment is switched back on.
+        // The phone shifts inside the holder, so its lean is noise; the RaceBox owns lean.
+        // Writing 0 here was worse than writing nothing — the ride detail read it as
+        // "you never leaned" instead of "not measured".
+        if UserDefaults.standard.bool(forKey: "lucidride.leanEnabled") {
+            summary["max_lean_deg"]     = maxImuLean_deg
+            summary["max_lean_deg_gps"] = maxLeanGps_deg
+        }
+        if rejectedSpeedSamples > 0 { summary["rejected_speed_samples"] = rejectedSpeedSamples }
         // Strip NaN/inf — JSON encoder would fail.
         for (k, v) in summary {
             if let d = v as? Double, !d.isFinite { summary[k] = 0.0 }

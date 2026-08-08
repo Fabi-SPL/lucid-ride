@@ -20,6 +20,16 @@ struct RideRouteMap: View {
 
     @State private var mode: ColorMode = .hrZone
 
+    /// Only offer "Lean" when this ride actually carries lean samples. Phone lean is off by
+    /// default (the holder moves), so on most rides the mode would paint a uniformly cold
+    /// line and read as "you rode the whole thing bolt upright".
+    private var hasLean: Bool {
+        waypoints.contains { ($0.lean_deg_gps ?? 0) != 0 }
+    }
+    private var availableModes: [ColorMode] {
+        ColorMode.allCases.filter { $0 != .lean || hasLean }
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
@@ -32,12 +42,13 @@ struct RideRouteMap: View {
                     .foregroundStyle(DS.Colors.textMuted)
                 Spacer()
                 Picker("Color by", selection: $mode) {
-                    ForEach(ColorMode.allCases) { m in
+                    ForEach(availableModes) { m in
                         Text(m.rawValue).tag(m)
                     }
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 200)
+                .onAppear { if mode == .lean && !hasLean { mode = .hrZone } }
             }
 
             if waypoints.count < 2 {

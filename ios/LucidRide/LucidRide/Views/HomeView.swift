@@ -273,10 +273,65 @@ struct HomeView: View {
     private var historySection: some View {
         VStack(spacing: 8) {
             sectionHeader("RIDE HISTORY", trailing: "\(model.completed.count) TOTAL")
-            ForEach(model.completed) { ride in
-                historyRow(ride)
+            ForEach(model.timeline) { item in
+                switch item {
+                case .ride(let ride):    historyRow(ride)
+                case .boxOnly(let sess): boxOnlyRow(sess)
+                }
             }
         }
+    }
+
+    /// A day the RaceBox went out without the phone. No route, no speed — but it is a ride,
+    /// and leaving it off the list is what made the history feel wrong.
+    private func boxOnlyRow(_ s: TrackerSession) -> some View {
+        HStack(spacing: 13) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.startedAt.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(DS.Colors.textPrimary)
+                Text(s.startedAt.formatted(.dateTime.month(.abbreviated).day()).uppercased())
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .foregroundStyle(DS.Colors.textMuted)
+            }
+            .frame(width: 48, alignment: .leading)
+
+            Image(systemName: "cpu")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DS.Colors.amberAccent)
+
+            Text("BOX ONLY")
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .tracking(0.4)
+                .foregroundStyle(DS.Colors.amberAccent)
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(s.maxLeanDeg.map { String(format: "%.0f° lean", $0) } ?? "— lean")
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .monospacedDigit()
+                Text(durationLabel(s.durationSeconds))
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .foregroundStyle(DS.Colors.textMuted)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.white.opacity(0.04)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(DS.Colors.amberAccent.opacity(0.25), lineWidth: 0.5)
+        )
+    }
+
+    private func durationLabel(_ seconds: TimeInterval) -> String {
+        let t = Int(seconds), h = t / 3600, m = (t % 3600) / 60
+        if h == 0 { return "\(m)m" }
+        if m == 0 { return "\(h)h" }
+        return "\(h)h \(m)m"
     }
 
     private func historyRow(_ ride: Ride) -> some View {
@@ -304,6 +359,22 @@ struct HomeView: View {
                     .foregroundStyle(effort.color)
 
                 Spacer(minLength: 0)
+
+                // Lean lives on the box, so a ride that had the box out says so — and shows
+                // the one number the phone can never produce.
+                if let t = model.tracker[ride.id], t.isMeaningful, let lean = t.maxLeanDeg {
+                    HStack(spacing: 3) {
+                        Image(systemName: "cpu")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(String(format: "%.0f°", lean))
+                            .font(.system(size: 11, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(DS.Colors.amberAccent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(DS.Colors.amberAccent.opacity(0.12)))
+                }
 
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(km > 0 ? String(format: "%.1f km", km) : "— km")
@@ -411,6 +482,8 @@ struct HomeView: View {
 final class GarageModel: ObservableObject {
     @Published var rides: [Ride] = []
     @Published var lastRideWaypoints: [TelemetryRow] = []
+    @Published var tracker: [String: TrackerSummary] = [:]
+    @Published var boxOnly: [TrackerSession] = []
     @Published var loading = true
 
     private let supabase = SupabaseClient.shared
@@ -418,6 +491,12 @@ final class GarageModel: ObservableObject {
     /// Completed rides, most-recent first (fetchRides already orders desc).
     var completed: [Ride] { rides.filter { $0.endedAt != nil } }
     var lastRide: Ride? { completed.first }
+
+    /// Phone rides and box-only outings in one date-ordered list.
+    var timeline: [TimelineItem] {
+        (completed.map(TimelineItem.ride) + boxOnly.map(TimelineItem.boxOnly))
+            .sorted { $0.date > $1.date }
+    }
 
     func load() async {
         loading = true
@@ -428,6 +507,9 @@ final class GarageModel: ObservableObject {
         if let fetched = try? await supabase.fetchRides(limit: 200) {
             rides = fetched
         }
+        // Same rule for the RaceBox roll-ups — keep the last good set on a failed fetch.
+        if let t = try? await supabase.fetchTrackerSummaries() { tracker = t }
+        if let s = try? await supabase.fetchTrackerSessions()  { boxOnly = s }
         if let last = lastRide {
             if let wp = try? await supabase.fetchRideTelemetry(activityId: last.id) {
                 lastRideWaypoints = wp   // full paginated track — full A→A loop

@@ -97,6 +97,52 @@ final class SupabaseClient {
         return (try? decoder.decode([Ride].self, from: data)) ?? []
     }
 
+    // MARK: - RaceBox roll-ups
+
+    /// One row per ride that has RaceBox samples bound to it. Small enough to fetch
+    /// alongside the ride list — it is an aggregate, not the raw 5–25 Hz stream.
+    func fetchTrackerSummaries(limit: Int = 200) async throws -> [String: TrackerSummary] {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select",  value: "*"),
+            URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+            URLQueryItem(name: "order",   value: "first_at.desc"),
+            URLQueryItem(name: "limit",   value: "\(limit)")
+        ]
+        guard let req = anonRequest(path: "/rest/v1/ride_tracker_summary", queryItems: queryItems) else {
+            throw NSError(domain: "lucidride", code: 400)
+        }
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            log("fetchTrackerSummaries failed: \(code)")
+            throw NSError(domain: "lucidride", code: code)
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601withFractional
+        let rows = (try? decoder.decode([TrackerSummary].self, from: data)) ?? []
+        return Dictionary(rows.map { ($0.activityId, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Box-only outings — RaceBox data with no phone ride to bind to. These are the days
+    /// the tracker went out alone; without this the history would silently skip them.
+    func fetchTrackerSessions(limit: Int = 100) async throws -> [TrackerSession] {
+        let queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "order",  value: "started_at.desc"),
+            URLQueryItem(name: "limit",  value: "\(limit)")
+        ]
+        guard let req = anonRequest(path: "/rest/v1/tracker_sessions", queryItems: queryItems) else {
+            throw NSError(domain: "lucidride", code: 400)
+        }
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw NSError(domain: "lucidride", code: (resp as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601withFractional
+        return (try? decoder.decode([TrackerSession].self, from: data)) ?? []
+    }
+
     /// Start a ride — inserts a motor_racing activity row with `started_at = now()`,
     /// `ended_at = null`, source 'tap'. Returns the inserted row.
     func startRide() async throws -> Ride? {

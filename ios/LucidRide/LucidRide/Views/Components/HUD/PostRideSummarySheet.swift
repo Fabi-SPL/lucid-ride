@@ -329,26 +329,33 @@ struct PostRideSummarySheet: View {
 
     // MARK: - IMU summary
 
+    /// Lean comes from the RaceBox when it was along for the ride. The phone's own IMU is a
+    /// fallback only if the (default-off) experiment is switched on — a phone that rotates
+    /// inside its holder cannot measure how far the bike is over.
     @ViewBuilder
-    private func imuSection(ride: Ride) -> some View {
+    private func imuSection(ride: Ride, tracker: TrackerSummary? = nil) -> some View {
         let leanOn = UserDefaults.standard.bool(forKey: "lucidride.leanEnabled")
-        let lean = ride.metadata?.maxLeanDeg ?? 0
+        let phoneLean = ride.metadata?.maxLeanDeg ?? 0
+        let boxLean = (tracker?.isMeaningful == true) ? (tracker?.maxLeanDeg ?? 0) : 0
         let accel = ride.metadata?.maxAccelG ?? 0
-        let showLean = leanOn && lean >= 1
+        let lean = boxLean > 0 ? boxLean : phoneLean
+        let showLean = boxLean > 0 || (leanOn && phoneLean >= 1)
         if !showLean && accel < 0.05 {
             EmptyView()
         } else {
             HStack(spacing: 10) {
                 if showLean {
                     imuTile(value: String(format: "%.0f°", lean),
-                            label: "MAX LEAN",
+                            label: boxLean > 0 ? "MAX LEAN · BOX" : "MAX LEAN",
                             icon: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
                             tint: DS.Colors.amberAccent)
                 }
-                imuTile(value: String(format: "%.2fG", accel),
-                        label: "PEAK ACCEL",
-                        icon: "speedometer",
-                        tint: DS.Colors.warning)
+                if accel >= 0.05 {
+                    imuTile(value: String(format: "%.2fG", accel),
+                            label: "PEAK ACCEL",
+                            icon: "speedometer",
+                            tint: DS.Colors.warning)
+                }
             }
         }
     }
