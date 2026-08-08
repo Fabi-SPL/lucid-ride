@@ -15,6 +15,8 @@ struct PostRideSummarySheet: View {
     @State private var showZones = false
     @State private var hrSamples: [HRSample] = []
     @State private var waypoints: [TelemetryRow] = []
+    @State private var tracker: TrackerSummary?
+    @State private var review: [RideReview.Insight] = []
 
     private let supabase = SupabaseClient.shared
 
@@ -37,10 +39,11 @@ struct PostRideSummarySheet: View {
                         } else if let ride {
                             RideRouteMap(waypoints: waypoints)
                             heroSection(ride: ride)
+                            RideReviewCard(insights: review)
                             statGrid(ride: ride)
                             zoneDisclosure(ride: ride)
                             if !hrSamples.isEmpty { hrSparkline }
-                            imuSection(ride: ride)
+                            imuSection(ride: ride, tracker: tracker)
                             Color.clear.frame(height: 40)
                         } else {
                             emptyState
@@ -448,8 +451,24 @@ struct PostRideSummarySheet: View {
             // loading faster on bad cell connections.
             async let hr   = supabase.fetchHRWindow(start: started, end: ended)
             async let wp   = supabase.fetchRideTelemetry(activityId: activityId)
-            hrSamples = (try? await hr) ?? []
-            waypoints = (try? await wp) ?? []
+            // The Review compares this ride against every earlier one, so the
+            // history and the box roll-ups come along in the same round trip.
+            async let hist = supabase.fetchRides(limit: 200)
+            async let trk  = supabase.fetchTrackerSummaries()
+            hrSamples          = (try? await hr) ?? []
+            waypoints          = (try? await wp) ?? []
+            let history        = (try? await hist) ?? []
+            let trackerHistory = (try? await trk) ?? [:]
+            tracker            = trackerHistory[activityId]
+            // Built once here, not in `body` — each Insight carries a fresh UUID,
+            // so recomputing per render would churn the ForEach identities.
+            review = RideReview.insights(
+                ride: r,
+                tracker: tracker,
+                trackerHistory: trackerHistory,
+                waypoints: waypoints,
+                history: history
+            )
         }
         loading = false
     }
