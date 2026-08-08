@@ -22,6 +22,9 @@ Ride Logo.png
 # Local backups
 *.bak
 
+# Firmware secrets (tracker AP creds) — never push to public repo
+secrets.h
+
 # Personal docs — stays local, never pushed.
 # Anything in here can mention real names, dates, purchase plans, hardware
 # specifics, or other context that doesn't belong in a public repo.
