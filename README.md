@@ -4,9 +4,9 @@
 
 A standalone iOS app, distributed via [AltStore PAL](https://altstore.io/), that joins three streams on one timeline:
 
-1. **Heart rate + HRV** — pulled from a linked health backend (Supabase REST + JOIN by ride window)
-2. **GPS + IMU + lean angle + segments** — telemetry placeholders today, wired up as hardware lands
-3. **Body-state correlation** — *"on rides where my morning HRV was poor, am I leaning less?"* That kind of question.
+1. **Heart rate + HRV**: pulled from a linked health backend (Supabase REST + JOIN by ride window)
+2. **GPS + IMU + lean angle + segments**: telemetry placeholders today, wired up as hardware lands
+3. **Body-state correlation**: *"on rides where my morning HRV was poor, am I leaning less?"* That kind of question.
 
 ## Why this exists
 
@@ -23,7 +23,7 @@ Most fitness platforms have nothing comparable to lean-angle data. Body-state �
 
 ## Quick start
 
-See [`ios/LucidRide/SETUP.md`](ios/LucidRide/SETUP.md) for first-time setup — required GitHub secrets, AltStore source URL, the bundle-ID-headroom note for free Apple Dev accounts.
+See [`ios/LucidRide/SETUP.md`](ios/LucidRide/SETUP.md) for first-time setup, including required GitHub secrets, AltStore source URL, the bundle-ID-headroom note for free Apple Dev accounts.
 
 ## Project layout
 
@@ -44,13 +44,13 @@ lucid-ride/
 
 ## Phase A status
 
-✅ Today view — body-state band (real HRV from the health backend) + Start/End Ride morphing button + recent rides
-✅ Rides list — every ride activity, newest first
-✅ Ride detail — real HR profile chart (Swift Charts) + placeholder telemetry tiles
-✅ Settings — auth, build info, sign out
+✅ Today view: body-state band (real HRV from the health backend) + Start/End Ride morphing button + recent rides
+✅ Rides list: every ride activity, newest first
+✅ Ride detail: real HR profile chart (Swift Charts) + placeholder telemetry tiles
+✅ Settings: auth, build info, sign out
 ✅ AltStore PAL pipeline (CI build, upload, source.json merge)
 
-🚧 Phase B (deferred — hardware-pending):
+🚧 Phase B (deferred, hardware-pending):
 - Health webhook handler for ride aggregates (Edge Function)
 - GPMF (GoPro telemetry) ingest pipeline
 - 25 Hz IMU CSV ingest (RaceBox Mini S)
@@ -69,4 +69,4 @@ lucid-ride/
 
 ## License
 
-Personal project — feel free to take reference patterns. Ask before forking the actual app target.
+Personal project. Feel free to take reference patterns. Ask before forking the actual app target.
